@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en-IN">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- viewport-fit=cover lets the installed app draw under a phone's notch; the
+         safe-area padding in style.css keeps content clear of it. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#182b33" />
+    <meta name="color-scheme" content="light" />
+
+    <title>Billbook · Kallazhagar Industries</title>
+    <meta
+      name="description"
+      content="Billing, delivery challans and material tracking for a CNC and job-work manufacturing unit."
+    />
+
+    <!-- Icons. vite-plugin-pwa injects the <link rel="manifest"> at build time;
+         these are the ones a browser looks for before that, plus iOS, which does
+         not read the manifest at all and needs an explicit apple-touch-icon. -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+
+    <!-- iOS standalone behaviour. Without these an installed iPhone app opens in
+         a Safari chrome-less view that still tries to load remote resources. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Billbook" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- This is a business record system: keep it out of search results and out of
+         referrer leaks to third parties (the OCR service is called server-side,
+         but the rule is cheap and the data is the company's). -->
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+
+    <!-- Preconnects to the data API, so the first query after sign-in does not pay
+         for DNS and TLS. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <div style="padding: 32px; font-family: system-ui, sans-serif; max-width: 40em; margin: 0 auto">
+        <h1>Billbook needs JavaScript</h1>
+        <p>
+          This application runs entirely in the browser, so JavaScript has to be enabled. It reads and
+          writes your billing and delivery challan records directly, with no server-side session to
+          fall back on.
+        </p>
+        <p>Enable JavaScript for this site and reload the page.</p>
+      </div>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

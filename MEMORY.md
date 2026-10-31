@@ -1,0 +1,1 @@
+- [Onboarding redirect fix](C:\Users\HP\.claude\projects\d--billing-management\memory\onboarding-redirect.md) — hook
