@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   describeError, explainError, friendlyError, isAlreadyBootstrapped,
-  isSessionRejected, needsEmailConfirmation,
+  isAuthOriginRejected, isSessionRejected, needsEmailConfirmation,
 } from '../lib/format'
 
 /**
@@ -104,6 +104,16 @@ describe('friendlyError and explainError stay readable', () => {
       .toBe('Your session has expired. Sign in again to continue.')
   })
 
+  it('names an auth origin rejection instead of blaming the session', () => {
+    // Live symptom: Neon Auth rejects a deployment domain that is not on the
+    // branch's trusted list with 403 INVALID_ORIGIN before it reads the password.
+    // The old generic 403 rule relabelled that as "your session has expired".
+    const rejected = { status: 403, message: 'Invalid origin', code: 'INVALID_ORIGIN' }
+    expect(friendlyError(rejected))
+      .toBe('This site is not allowed to sign in. An administrator must add this address as a trusted domain in Neon Auth.')
+    expect(friendlyError(rejected)).not.toBe('Your session has expired. Sign in again to continue.')
+  })
+
   it('explainError keeps the real cause instead of "[object Object]"', () => {
     // explainError is the one that used to show the raw String(error) to the user.
     const explained = explainError({ message: 'Database connection refused' }, 'fallback')
@@ -137,6 +147,16 @@ describe('isSessionRejected recognises a lapsed session in every shape', () => {
     expect(isSessionRejected({ status: 401 })).toBe(true)
     expect(isSessionRejected({ status: 403 })).toBe(true)
     expect(isSessionRejected({ status: 401, message: '' })).toBe(true)
+  })
+
+  it('does not retry an auth origin rejection as if the session had lapsed', () => {
+    // Refreshing the token cannot add the domain to the trusted list, so this 403
+    // must not spend a refresh and a replay on a request that will fail again.
+    const rejected = { status: 403, message: 'Invalid origin', code: 'INVALID_ORIGIN' }
+    expect(isSessionRejected(rejected)).toBe(false)
+    expect(isAuthOriginRejected(rejected)).toBe(true)
+    expect(isAuthOriginRejected({ status: 403, code: 'INVALID_ORIGIN' })).toBe(true)
+    expect(isAuthOriginRejected({ status: 403, message: 'Forbidden' })).toBe(false)
   })
 
   it('recognises the auth library error codes', () => {

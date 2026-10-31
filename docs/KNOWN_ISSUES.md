@@ -320,10 +320,17 @@ Now:
 - `isSessionRejected()` matches the whole rejection — message, any auth `code`,
   and an HTTP 401 or 403 — so a session failure in **any** shape triggers a token
   refresh and an automatic replay without a refresh.
+- `isAuthOriginRejected()` names the one 403 that is **not** a session failure:
+  Neon Auth's `Invalid origin` (`INVALID_ORIGIN`), returned before the password is
+  read when the page's origin is not on the branch's trusted-domain list. It is
+  excluded from `isSessionRejected()` (a refresh cannot add a domain) and
+  `friendlyError()` reports it as a trusted-domain problem instead of "your
+  session has expired".
 
-Covered by `src/test/errors.test.ts` (23 tests), including a sweep proving the
-literal string cannot be produced by any input, and a negative test proving a
-genuine business fault is not mistaken for a lapsed session.
+Covered by `src/test/errors.test.ts`, including a sweep proving the
+literal string cannot be produced by any input, a negative test proving a
+genuine business fault is not mistaken for a lapsed session, and an auth
+origin rejection that must not be retried as one.
 
 If you add a new error path, use `describeError(cause, 'Could not load X.')`
 rather than `String(cause)`.

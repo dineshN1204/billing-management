@@ -158,6 +158,24 @@ baked into the bundle at build time. Set them in the host's build environment,
 then rebuild. No other variable is needed, and **no secret may be set here** —
 everything `VITE_`-prefixed is readable by any visitor.
 
+### Neon Auth trusted domains
+
+Neon Auth accepts a browser sign-in only from an origin on the branch's trusted
+list. A deployment domain that has never been added fails with
+`403 INVALID_ORIGIN` **before the password is checked** — the same 403 a lapsed
+session produces, which is why the app now names it explicitly. Localhost is
+pre-approved by default, so `npm run dev` can work while production cannot.
+
+Add every deployed origin (scheme + host, no trailing slash, no wildcards):
+
+```bash
+neon neon-auth domain add https://billing.kallazhagarindustries.com
+neon neon-auth domain list
+```
+
+Do this once per branch that serves a deployment. It is configuration, not code:
+changing it needs no rebuild.
+
 ### Redirects for a single-page app on an existing host
 
 If `/dc/*` is already served by something else, scope the rewrite to the app's
@@ -184,9 +202,11 @@ neon functions get api
 neon functions get process-bill
 ```
 
-Set `WEB_ORIGIN` to the exact frontend origin — **no trailing slash**. It is the
-CORS allow-list; a mismatch is the usual cause of a function call failing only in
-production.
+Set `WEB_ORIGIN` to the exact frontend origin(s) — **no trailing slash**. It is
+the CORS allow-list; a mismatch is the usual cause of a function call failing
+only in production. Comma-separate several origins (for example the live site
+plus `http://localhost:5173` for local development); spaces around commas are
+ignored.
 
 Optional: `OCR_API_KEY`. Without it, scanning fails with a clear message rather
 than returning wrong data.

@@ -193,6 +193,16 @@ export function friendlyError(error: unknown): string {
     if (pattern.test(message)) return dcDetail(message, code) ?? fallback
   }
   if (message.includes('VALIDATION_ERROR:')) return message.split('VALIDATION_ERROR: ')[1] ?? 'Please check the form.'
+  if (isAuthOriginRejected(error)) {
+    // Say which address was refused when we know it; that is the string an
+    // administrator has to add to the branch's trusted domains.
+    const origin = typeof window !== 'undefined' && window.location.origin !== 'null'
+      ? window.location.origin
+      : ''
+    return origin
+      ? `This site (${origin}) is not allowed to sign in. An administrator must add it as a trusted domain in Neon Auth.`
+      : 'This site is not allowed to sign in. An administrator must add this address as a trusted domain in Neon Auth.'
+  }
   if (message.includes('FORBIDDEN') || message.includes('row-level security') || message.includes('permission denied')) return 'You do not have permission for this action.'
   if (message.includes('Failed to fetch') || message.includes('NetworkError')) return 'Connection failed. Check your internet and try again.'
   if (isAlreadyBootstrapped(error)) return 'You already have a workspace.'
@@ -223,6 +233,26 @@ export function isAlreadyBootstrapped(error: unknown): boolean {
 }
 
 /**
+ * True for the rejection Neon Auth returns when the page's origin is not on the
+ * branch's trusted-domain list: HTTP 403 with `Invalid origin` (raw code
+ * `INVALID_ORIGIN`). It is decided before the credentials are looked at, so it
+ * says nothing about the session - see isSessionRejected(), which must not treat
+ * it as one.
+ *
+ * Without this guard the bare 403 matched the "any 401/403 means lapsed session"
+ * rule, so signing in from an unlisted deployment domain was reported as an
+ * expired session and sent through a token refresh that could never help. The
+ * message is the reliable marker: the auth SDK preserves it but replaces the raw
+ * code with a generic 403 one.
+ */
+export function isAuthOriginRejected(error: unknown): boolean {
+  const fingerprint = errorFingerprint(error)
+  if (fingerprint.includes('invalid origin') || fingerprint.includes('invalid_origin')) return true
+  // Last resort for a transport that kept only the status and a generic wording.
+  return fingerprint.includes('origin') && fingerprint.includes('403')
+}
+
+/**
  * Raised when the token is missing, expired or rejected, rather than merely absent.
  * PGRST301 is what the Neon Data API actually returns for a lapsed 15-minute access
  * token, and it must never be mistaken for "this user has no workspace".
@@ -243,9 +273,11 @@ export function isAlreadyBootstrapped(error: unknown): boolean {
  *
  * So this matches on the whole rejection, not just one string field: the
  * message, any GoTrue `code` / `error_description`, and an HTTP `status` of 401
- * or 403 with no usable text at all.
+ * or 403 with no usable text at all. An auth origin rejection is the one 403 that
+ * is excluded: refreshing the token cannot add the domain to the trusted list.
  */
 export function isSessionRejected(error: unknown): boolean {
+  if (isAuthOriginRejected(error)) return false
   // A bare 401/403 is authoritative even when nothing else says so.
   if (typeof error === 'object' && error !== null) {
     const record = error as Record<string, unknown>
