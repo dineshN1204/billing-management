@@ -3,7 +3,16 @@ import globals from 'globals'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules', 'coverage'] },
+  {
+    // Root-level probe scripts are listed in .gitignore as disposable diagnostic
+    // output. They are not application source and nothing imports them, so they
+    // must not be able to turn `npm run lint` red - a baseline that is red on
+    // purpose is a baseline people learn to ignore.
+    ignores: [
+      'dist', 'node_modules', 'coverage',
+      'fix_inspection.ts', 'verify_fix.ts', 'neon.ts', 'hello-world.ts',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
