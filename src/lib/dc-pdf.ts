@@ -433,7 +433,12 @@ export function buildDcDefinition(bundle: DcBundle, company: Company): TDocument
       margin: [0, 8, 0, 0],
       stack: [
         { text: 'MACHINING AND PROCESSING RESULTS', style: 'label', margin: [0, 0, 0, 4] },
-        table(share(0.6, 1.05, 1.05, 1.0, 0.95, 0.85, 0.75, 0.75, 0.75, 0.85), machiningRows(bundle.machining_results)),
+        // Operation is the only free-text column ("CNC Turning" is 52pt at the
+        // table's 9pt), so it gets the widest share; the five outcome columns
+        // only ever hold a number and the Line column only a dash, so they
+        // give up the width. Sizing Operation as an average column wrapped
+        // every operation onto two lines.
+        table(share(0.45, 1.05, 1.2, 1.0, 0.95, 0.85, 0.75, 0.75, 0.75, 0.85), machiningRows(bundle.machining_results)),
       ],
     }
     : ''
