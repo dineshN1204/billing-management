@@ -206,6 +206,7 @@ export function friendlyError(error: unknown): string {
   if (message.includes('FORBIDDEN') || message.includes('row-level security') || message.includes('permission denied')) return 'You do not have permission for this action.'
   if (message.includes('Failed to fetch') || message.includes('NetworkError')) return 'Connection failed. Check your internet and try again.'
   if (isAlreadyBootstrapped(error)) return 'You already have a workspace.'
+  if (message.includes('organization not found')) return 'That company is no longer available to join.'
   if (isSessionRejected(error)) return 'Your session has expired. Sign in again to continue.'
   if (message.includes('No active session found') || message.includes('Failed to retrieve user session')) return 'We could not start your session. Please try again.'
   return GENERIC_ERROR
@@ -299,6 +300,8 @@ export function isSessionRejected(error: unknown): boolean {
     || fingerprint.includes('jwt_expired')
     || fingerprint.includes('token is expired')
     || fingerprint.includes('token expired')
+    || fingerprint.includes('sign in to continue')
+    || fingerprint.includes('your session has expired')
     || fingerprint.includes('status:401')
     || fingerprint.includes('status: 401')
     || fingerprint.includes('401 unauthorized')

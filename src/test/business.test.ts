@@ -106,6 +106,18 @@ describe('auth error messaging', () => {
     expect(isSessionRejected(new Error('Failed to fetch'))).toBe(false)
     expect(isSessionRejected(new Error('connection terminated unexpectedly'))).toBe(false)
   })
+  it('recognises the functions\' own 401 wordings from api and process-bill', () => {
+    // /documents/upload returns this when it rejects the bearer token.
+    expect(friendlyError(new Error('Sign in to continue.'))).toBe('Your session has expired. Sign in again to continue.')
+    expect(isSessionRejected(new Error('Sign in to continue.'))).toBe(true)
+    // jwtVerify reports this when the token is expired or malformed.
+    expect(friendlyError(new Error('Your session has expired.'))).toBe('Your session has expired. Sign in again to continue.')
+    expect(isSessionRejected(new Error('Your session has expired.'))).toBe(true)
+    // A status-bearing error from backendRequest is recognised by status alone.
+    const rejected = Object.assign(new Error('Sign in to continue.'), { status: 401 })
+    expect(isSessionRejected(rejected)).toBe(true)
+    expect(friendlyError(rejected)).toBe('Your session has expired. Sign in again to continue.')
+  })
   it('recognises the SDK wording for a session it could not produce a token for', () => {
     // The exact AuthRequiredError the SDK throws before it sends anything. It
     // used to fall through to the generic sentence, so finalizing a challan
@@ -124,6 +136,11 @@ describe('auth error messaging', () => {
     expect(friendlyError(cause)).toBe('The request could not be completed. Please try again.')
     expect(explainError(cause, 'Could not save the challan.')).toBe('pg_catalog: something the app has never seen')
     expect(explainError(new Error(''), 'Could not save the challan.')).toBe('Could not save the challan.')
+  })
+  it('shows an unmapped function error verbatim instead of the generic sentence', () => {
+    const cause = Object.assign(new Error('Storage upload failed: unexpected end of file'), { status: 500 })
+    expect(friendlyError(cause)).toBe('The request could not be completed. Please try again.')
+    expect(explainError(cause, 'The scan could not be uploaded. Please try again.')).toBe('Storage upload failed: unexpected end of file')
   })
   it('recognises a workspace that already exists', () => {
     expect(isAlreadyBootstrapped(new Error('PT409 ALREADY_BOOTSTRAPPED: user already belongs to an organization'))).toBe(true)

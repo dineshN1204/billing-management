@@ -260,16 +260,25 @@ three times; if it persists, restart the branch's compute.
 
 **"Your session has expired." when attaching a document or scanning, on a test
 branch only (works on production)** — the three endpoints are not all on the same
-branch. The api/process-bill functions verify the bearer token against the auth
+branch. The api/processbill functions verify the bearer token against the auth
 server of the branch they were deployed to, and look the organization up in their
 own `DATABASE_URL` branch. Switching `VITE_NEON_DATABASE_URL` to a test branch
 does *not* switch which branch the functions belong to, so a token issued by the
 test-branch auth server is rejected as expired, and the org's membership rows may
-not exist on the function's copy. Either deploy `api` and `process-bill` on the
+not exist on the function's copy. Either deploy `api` and `processbill` on the
 test branch and point `VITE_NEON_API_URL` / `VITE_NEON_PROCESS_BILL_URL` at them,
 or run the frontend against the production trio. See "Branch alignment" in
-section 2. The upload and insert paths are otherwise identical between branches
-— the failure is configuration, not a code or schema bug.
+section 2.
+
+The frontend now retries once on a `401` after forcing a session refresh
+(`backendRequest` in `src/lib/db.ts`), so a lapsed 15-minute access token
+self-heals instead of showing "the request could not be completed". If the
+refresh fails, the error names "Sign in to continue." and the UI shows
+"Your session has expired. Sign in again to continue." rather than the generic
+fallback.
+
+The upload and insert paths are otherwise identical between branches — the
+failure is configuration, not a code or schema bug.
 
 **A save fails with a quantity error** — the database refused the business rule.
 The message is shown verbatim; `src/lib/format.ts` maps the known codes to

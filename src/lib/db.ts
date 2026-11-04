@@ -135,14 +135,49 @@ export async function queryWithRetry<T extends { error: unknown }>(run: () => Pr
   }
 }
 
+/**
+ * A failure from one of the app's own functions (api / process-bill) that
+ * carries the HTTP status, so `isSessionRejected` and `friendlyError` can map
+ * it to a user-facing message instead of the generic sentence.
+ */
+export class BackendRequestError extends Error {
+  readonly status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = 'BackendRequestError'
+    this.status = status
+  }
+}
+
+/**
+ * Calls one of the app's own functions (api / process-bill) with the current
+ * session token. A lapsed token is retried once after a forced session refresh,
+ * which is what keeps a long-lived Scan tab from reporting every upload as
+ * "the request could not be completed" once the 15-minute access token expires.
+ * Every failure carries the HTTP status so callers can map it to a message the
+ * user can act on. Functions reject the token before any side effect, so the
+ * single replay is safe against upload and OCR-invocation endpoints alike.
+ */
 export async function backendRequest<T>(base: string, path: string, init: RequestInit = {}): Promise<T> {
+  const url = `${base.replace(/\/$/, '')}${path}`
+
+  async function run(token: string, retried: boolean): Promise<T> {
+    const response = await fetch(url, {
+      ...init,
+      headers: { Authorization: `Bearer ${token}`, ...(init.headers ?? {}) },
+    })
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null
+    if (response.ok) return payload as T
+    const message = payload?.error ?? `Request failed (${response.status})`
+    if (response.status === 401 && !retried) {
+      const refreshed = await sharedRefresh()
+      if (refreshed) return run(refreshed, true)
+    }
+    throw new BackendRequestError(response.status, message)
+  }
+
   const token = await accessToken()
-  if (!token) throw new Error('Not authenticated')
-  const response = await fetch(`${base.replace(/\/$/, '')}${path}`, {
-    ...init,
-    headers: { Authorization: `Bearer ${token}`, ...(init.headers ?? {}) },
-  })
-  const payload = (await response.json().catch(() => null)) as (T & { error?: string }) | null
-  if (!response.ok) throw new Error(payload?.error ?? `Request failed (${response.status})`)
-  return payload as T
+  if (!token) throw new BackendRequestError(401, 'Sign in to continue.')
+  return run(token, false)
 }

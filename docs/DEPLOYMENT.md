@@ -196,10 +196,10 @@ Deploy both and record the URLs:
 
 ```bash
 neon functions deploy api
-neon functions deploy process-bill
+neon functions deploy processbill
 
 neon functions get api
-neon functions get process-bill
+neon functions get processbill
 ```
 
 Set `WEB_ORIGIN` to the exact frontend origin(s) — **no trailing slash**. It is

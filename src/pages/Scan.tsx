@@ -7,7 +7,7 @@ import { DocumentPicker } from '../components/DocumentPicker'
 import { Button, Card, EmptyState, Loading, PageTitle, Status } from '../components/ui'
 import { useAuth } from '../lib/auth'
 import { uploadDocument, validateDocument } from '../lib/documents'
-import { friendlyError, money, normalizeGstin } from '../lib/format'
+import { explainError, friendlyError, money, normalizeGstin } from '../lib/format'
 import { db, processBillUrl, backendRequest } from '../lib/db'
 import type { Attachment, Customer, OcrJob } from '../lib/types'
 
@@ -68,7 +68,7 @@ export function Scan() {
         if (refreshed) setJobs(old => old.map(job => job.id === refreshed.id ? refreshed as OcrJob : job))
         if (invokeError) { setError('A document could not be processed. You can retry it below.'); continue }
         if (files.length === 1) { navigate(`/scan/review/${data.id}`); break }
-      } catch (cause) { setError(friendlyError(cause)) }
+      } catch (cause) { setError(explainError(cause, 'The scan could not be uploaded. Please try again.')) }
     }
     setBusy(false)
   }
@@ -80,7 +80,7 @@ export function Scan() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ job_id: id }),
       })
-    } catch { setError('OCR failed. Check the document and OCR configuration, then retry.') }
+    } catch (cause) { setError(explainError(cause, 'OCR failed. Check the document and OCR configuration, then retry.')) }
     const { data } = await db.from('ocr_jobs').select('*').eq('id', id).single()
     if (data) setJobs(old => old.map(job => job.id === id ? data as OcrJob : job))
     setBusy(false)
