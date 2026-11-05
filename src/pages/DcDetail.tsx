@@ -143,6 +143,30 @@ const loadToken = useRef(0)
     }
   }
 
+  // An action button opens its panel further down the page, below the item
+  // table — out of view on most screens. Scroll it into view so the next step
+  // is actually seen, matching how DcItemEditor focuses a field it flags.
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!panel) return
+    const frame = requestAnimationFrame(() => {
+      panelRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [panel])
+
+  // Errors and confirmations render in banners at the top of the page, away
+  // from the panel the operator is working in. Focus and scroll to them so a
+  // failure is seen rather than missed.
+  const errorRef = useRef<HTMLParagraphElement | null>(null)
+  const noticeRef = useRef<HTMLParagraphElement | null>(null)
+  useEffect(() => {
+    const el = error ? errorRef.current : notice ? noticeRef.current : null
+    if (!el) return
+    el.focus()
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [error, notice])
+
   if (loading) return <Loading label="Loading challan..." />
   if (!bundle || !doc) {
     return (
@@ -180,8 +204,8 @@ const loadToken = useRef(0)
           }
         />
 
-        {error && <p role="alert" className="error-box">{error}</p>}
-        {notice && <p role="status" className="success-box">{notice}</p>}
+        {error && <p ref={errorRef} tabIndex={-1} role="alert" className="error-box">{error}</p>}
+        {notice && <p ref={noticeRef} tabIndex={-1} role="status" className="success-box">{notice}</p>}
 
         <div className="dc-card-stack">
         {doc.cancel_reason && (
@@ -195,7 +219,7 @@ const loadToken = useRef(0)
         <div className="dc-actions">
           {doc.dc_type === 'inward' && doc.status !== 'cancelled' && (
             <>
-              {!readOnly && <Button variant="secondary" onClick={() => setPanel(panel === 'receipt' ? null : 'receipt')}><Truck size={16} /> Record receipt</Button>}
+              {!readOnly && <Button onClick={() => setPanel(panel === 'receipt' ? null : 'receipt')}><Truck size={16} /> Record receipt</Button>}
               {!readOnly && <Button variant="secondary" onClick={() => setPanel(panel === 'inspection' ? null : 'inspection')}>Record inspection</Button>}
               {/* The next step of the job: send the finished parts back. It is
                   offered only once every line has been received and judged,
@@ -375,30 +399,32 @@ const loadToken = useRef(0)
           </Card>
         )}
 
-        {panel === 'receipt' && (
-          <ReceiptPanel bundle={bundle} busy={busy} organizationId={organization!.id} onCancel={() => setPanel(null)} onSubmit={values => run(() => dcApi.recordReceipt(organization!.id, values), 'Receipt recorded.')} />
-        )}
-        {panel === 'inspection' && (
-          <InspectionPanel bundle={bundle} busy={busy} organizationId={organization!.id} onCancel={() => setPanel(null)} onSubmit={values => run(() => dcApi.recordInspection(organization!.id, values), 'Inspection recorded.')} />
-        )}
-        {panel === 'machining' && (
-          <MachiningPanel bundle={bundle} busy={busy} organizationId={organization!.id} onCancel={() => setPanel(null)} onSubmit={values => run(() => dcApi.recordMachiningBatch(organization!.id, values), 'Machining results recorded.')} />
-        )}
-        {panel === 'dispatch' && (
-          <DispatchPanel bundle={bundle} busy={busy} organizationId={organization!.id} onCancel={() => setPanel(null)} onSubmit={values => run(() => dcApi.recordDispatch(organization!.id, values), 'Dispatch recorded.')} />
-        )}
-        {panel === 'delivery' && (
-          <DeliveryPanel bundle={bundle} busy={busy} organizationId={organization!.id} onCancel={() => setPanel(null)} onSubmit={values => run(() => dcApi.confirmDelivery(organization!.id, values), 'Delivery recorded.')} />
-        )}
+        <div ref={panelRef}>
+          {panel === 'receipt' && (
+            <ReceiptPanel bundle={bundle} busy={busy} organizationId={organization!.id} onCancel={() => setPanel(null)} onSubmit={values => run(() => dcApi.recordReceipt(organization!.id, values), 'Receipt recorded.')} />
+          )}
+          {panel === 'inspection' && (
+            <InspectionPanel bundle={bundle} busy={busy} organizationId={organization!.id} onCancel={() => setPanel(null)} onSubmit={values => run(() => dcApi.recordInspection(organization!.id, values), 'Inspection recorded.')} />
+          )}
+          {panel === 'machining' && (
+            <MachiningPanel bundle={bundle} busy={busy} organizationId={organization!.id} onCancel={() => setPanel(null)} onSubmit={values => run(() => dcApi.recordMachiningBatch(organization!.id, values), 'Machining results recorded.')} />
+          )}
+          {panel === 'dispatch' && (
+            <DispatchPanel bundle={bundle} busy={busy} organizationId={organization!.id} onCancel={() => setPanel(null)} onSubmit={values => run(() => dcApi.recordDispatch(organization!.id, values), 'Dispatch recorded.')} />
+          )}
+          {panel === 'delivery' && (
+            <DeliveryPanel bundle={bundle} busy={busy} organizationId={organization!.id} onCancel={() => setPanel(null)} onSubmit={values => run(() => dcApi.confirmDelivery(organization!.id, values), 'Delivery recorded.')} />
+          )}
 
-        {panel === 'cancel' && (
-          <CancelPanel
-            busy={busy}
-            organizationId={organization!.id}
-            onCancel={() => setPanel(null)}
-            onSubmit={reason => run(() => dcApi.cancel(organization!.id, doc.id, reason), 'Challan cancelled and recorded in the audit trail.')}
-          />
-        )}
+          {panel === 'cancel' && (
+            <CancelPanel
+              busy={busy}
+              organizationId={organization!.id}
+              onCancel={() => setPanel(null)}
+              onSubmit={reason => run(() => dcApi.cancel(organization!.id, doc.id, reason), 'Challan cancelled and recorded in the audit trail.')}
+            />
+          )}
+        </div>
 
         {doc.dc_type === 'outward_customer' && !readOnly && (
           <LinkedBills dc={doc} />
@@ -562,7 +588,9 @@ function ItemTable({ bundle }: { bundle: DcBundle }) {
     <Card className="detail-card no-print">
       <div className="section-header"><h2>Line items</h2></div>
       <div className="table-scroll">
-        <table>
+        {/* `stack-on-mobile` + data-label lets the CSS rebuild this table as
+            stacked per-row cards on phones (see style.css @media ≤640px). */}
+        <table className="stack-on-mobile">
           <thead>
             <tr>
               <th>#</th><th>Part number</th><th>Customer DC</th><th>Description</th><th>Drawing</th>
@@ -576,29 +604,29 @@ function ItemTable({ bundle }: { bundle: DcBundle }) {
           <tbody>
             {bundle.items.map(item => (
               <tr key={item.id}>
-                <td>{item.line_no}</td>
-                <td className="table-primary">{item.part_number}</td>
+                <td data-label="Line">{item.line_no}</td>
+                <td className="table-primary" data-label="Part number">{item.part_number}</td>
                 {/* Which of the customer's own challans this material arrived on.
                     One inward challan can carry several of theirs, so this is a
                     per-line fact and not a header field. On an outward line the
                     number comes from the inward line it was drawn from. */}
-                <td className="mono">{item.customer_dc_number || item.source_inward_customer_dc_number || '—'}</td>
-                <td>{item.description ?? '—'}</td>
-                <td>{item.drawing_number ?? '—'}</td>
-                <td className="num">{qty(item.declared_qty)}</td>
+                <td className="mono" data-label="Customer DC">{item.customer_dc_number || item.source_inward_customer_dc_number || '—'}</td>
+                <td data-label="Description">{item.description ?? '—'}</td>
+                <td data-label="Drawing">{item.drawing_number ?? '—'}</td>
+                <td className="num" data-label="Declared">{qty(item.declared_qty)}</td>
                 {isInward && <>
-                  <td className="num">{qty(item.received_qty)}</td>
-                  <td className="num">{qty(item.shortage_qty)}</td>
-                  <td className="num">{qty(item.accepted_qty)}</td>
-                  <td className="num">{qty(item.rejected_qty)}</td>
-                  <td>{inspectionBadge(item)}</td>
+                  <td className="num" data-label="Received">{qty(item.received_qty)}</td>
+                  <td className="num" data-label="Shortage">{qty(item.shortage_qty)}</td>
+                  <td className="num" data-label="Accepted">{qty(item.accepted_qty)}</td>
+                  <td className="num" data-label="Rejected">{qty(item.rejected_qty)}</td>
+                  <td data-label="Inspection">{inspectionBadge(item)}</td>
                 </>}
 
                 {doc.dc_type === 'outward_customer' && <>
-                  <td className="num">{item.ordered_qty === null ? '—' : qty(item.ordered_qty)}</td>
-                  <td className="num">{qty(item.qty_dispatched)}</td>
+                  <td className="num" data-label="Ordered">{item.ordered_qty === null ? '—' : qty(item.ordered_qty)}</td>
+                  <td className="num" data-label="Dispatched">{qty(item.qty_dispatched)}</td>
                 </>}
-                <td>{item.unit}</td>
+                <td data-label="Unit">{item.unit}</td>
               </tr>
             ))}
           </tbody>
@@ -860,7 +888,9 @@ function ReceiptPanel({ bundle, busy, organizationId, onCancel, onSubmit }: Pane
       )}
       {receiptError(lines)}
       <div className="table-scroll">
-        <table>
+        {/* `stack-on-mobile` + data-label lets the CSS rebuild this table as
+            stacked per-row cards on phones (see style.css @media ≤640px). */}
+        <table className="stack-on-mobile">
           <thead><tr><th>Part</th><th className="num">Declared</th><th className="num">Received</th><th className="num">Shortage</th><th className="num">Excess</th><th className="num">Rejected</th><th>Reason</th><th className="num">To inspect</th><th>Inspection</th></tr></thead>
           <tbody>
             {lines.map((line, index) => {
@@ -868,9 +898,9 @@ function ReceiptPanel({ bundle, busy, organizationId, onCancel, onSubmit }: Pane
               const rejectedOverReceived = parseQty(line.rejected) > parseQty(line.received)
               return (
                 <tr key={line.id}>
-                  <td className="table-primary">{line.part}</td>
-                  <td className="num">{qty(line.declared)}</td>
-                  <td className="num">
+                  <td className="table-primary" data-label="Part">{line.part}</td>
+                  <td className="num" data-label="Declared">{qty(line.declared)}</td>
+                  <td className="num" data-label="Received">
                     <input
                       className="dc-qty-input"
                       value={line.received}
@@ -879,9 +909,9 @@ function ReceiptPanel({ bundle, busy, organizationId, onCancel, onSubmit }: Pane
                       onChange={e => setLines(old => old.map((l, i) => i === index ? { ...l, received: e.target.value } : l))}
                     />
                   </td>
-                  <td className="num">{qty(split.shortage)}</td>
-                  <td className="num">{qty(split.excess)}</td>
-                  <td className="num">
+                  <td className="num" data-label="Shortage">{qty(split.shortage)}</td>
+                  <td className="num" data-label="Excess">{qty(split.excess)}</td>
+                  <td className="num" data-label="Rejected">
                     <input
                       className={`dc-qty-input${rejectedOverReceived ? ' invalid' : ''}`}
                       value={line.rejected}
@@ -890,7 +920,7 @@ function ReceiptPanel({ bundle, busy, organizationId, onCancel, onSubmit }: Pane
                       onChange={e => setRejected(index, e.target.value)}
                     />
                   </td>
-                  <td>
+                  <td data-label="Reason">
                     <input
                       value={line.reason}
                       list="dc-receipt-rejection-reasons"
@@ -899,10 +929,10 @@ function ReceiptPanel({ bundle, busy, organizationId, onCancel, onSubmit }: Pane
                       onChange={e => setLines(old => old.map((l, i) => i === index ? { ...l, reason: e.target.value } : l))}
                     />
                   </td>
-                  <td className="num">
+                  <td className="num" data-label="To inspect">
                     {line.inspection_required ? qty(split.pending) : <span className="muted">accepted on arrival</span>}
                   </td>
-                  <td>
+                  <td data-label="Inspection">
                     <label className="inline-control">
                       <input
                         type="checkbox"

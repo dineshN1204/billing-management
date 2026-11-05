@@ -55,6 +55,23 @@ You never handle anyone's password. You never see it.
 > makes all of that unattributable, and it is also how invoices end up with the
 > wrong name on them.
 
+### Joining an existing company
+
+A person can also join a company that already exists without waiting for an
+admin: on the setup screen they choose **Join an existing company**, enter the
+company's GSTIN (or a partial GSTIN, or its name), pick it from the results, and
+confirm. They join as **read-only**; an admin then changes their role in
+**Settings → Employee access**.
+
+The **Settings → Employee access** list shows each person's name (falling back
+to their email). The database owner can also see who is who directly, via the
+developer-only views described in `docs/DATABASE_MAINTENANCE.md`.
+
+> Anyone who knows the company's GSTIN can join it read-only. That is by design
+> — GSTINs are public tax identifiers — but it means every viewer can see all
+> records. Check the audit log for unexpected joins, and remove anyone who
+> should not have access.
+
 ### Deactivating an employee who leaves
 
 1. **Settings → Employee access**.
@@ -133,7 +150,9 @@ implemented — only the isolation that already exists is relied on.
 ## Onboarding a new employee
 
 - [ ] They create an account with their own email and confirm it
-- [ ] An admin adds them with a role
+- [ ] Either an admin adds them with a role, or they join the company
+      themselves from the setup screen (**Join an existing company**) as
+      read-only
 - [ ] They sign in and see the dashboard
 - [ ] If they need challans, they read `docs/PWA_INSTALLATION.md` and install it
 - [ ] If they handle money, they also read the GST section of this project's README

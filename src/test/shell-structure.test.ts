@@ -107,6 +107,18 @@ describe('the sidebar footer cannot be pushed off screen', () => {
     expect(rule('.brand{flex')).toContain('flex-shrink:0')
   })
 
+  it('sizes the sidebar to the visible viewport, not to browser chrome', () => {
+    // 100vh includes the address bar on some phones, so the drawer would be
+    // taller than the screen and the bottom links fall below the fold.
+    expect(rule('.sidebar{width'), 'sidebar height rule is missing').toContain('100dvh')
+  })
+
+  it('keeps the nav scrollable with momentum on touch devices', () => {
+    const nav = rule('.sidebar nav{')
+    expect(nav).toContain('overflow-y:auto')
+    expect(nav).toContain('-webkit-overflow-scrolling:touch')
+  })
+
   it('reveals the sign-out label on a narrow screen', () => {
     // Below 850px the status text is hidden, so an icon-only button would have no
     // visible label and a small touch target.

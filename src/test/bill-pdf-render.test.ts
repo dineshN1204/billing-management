@@ -215,6 +215,16 @@ describe('Tax invoice PDF, rendered by the real pdfmake', () => {
     expect(bottom, 'bottom margin did not grow to fit the signature').toBeGreaterThanOrEqual(72)
   })
 
+  it('insets the signature block to the page margins so it lines up with the table', () => {
+    const def = buildBillDefinition(bill(), [item()], COMPANY, REFERENCES)
+    const footer = def.footer as ((currentPage: number, pageCount: number) => unknown)
+    const last = JSON.stringify(footer(3, 3))
+    // The footer spans the full page width; without a left/right inset the
+    // signatory lines would start at the page edge while the table starts at
+    // the 36pt page margin. The inset brings them into alignment.
+    expect(last, 'signature block is not inset from the left page margin').toContain('"margin":[36,0,36,0]')
+  })
+
   it('prints the total in words as well as in figures', async () => {
     const drawn = await flat(buildBillDefinition(bill(), [item()], COMPANY, REFERENCES))
     expect(drawn, 'the amount in words is missing').toContain('AMOUNTINWORDS')

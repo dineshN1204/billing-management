@@ -546,7 +546,10 @@ export function buildDcDefinition(bundle: DcBundle, company: Company): TDocument
        above grows to hold it while the other three page margins stay the same. */
     footer: (currentPage: number, pageCount: number) =>
       currentPage === pageCount
-        ? { margin: [0, 0, 0, 0], stack: [signatures, { margin: [0, 12, 0, 0], text: 'This is a material movement record, not a tax invoice.', style: 'sub' }] }
+        ? {
+          margin: [36, 0, 36, 0],
+          stack: [signatures, { margin: [0, 12, 0, 0], text: 'This is a material movement record, not a tax invoice.', style: 'sub', alignment: 'center' }],
+        }
         : '',
   }
 }

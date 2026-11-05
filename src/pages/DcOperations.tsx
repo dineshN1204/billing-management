@@ -378,14 +378,16 @@ export function DcPending() {
             <div className="section-header"><h2>Awaiting inspection</h2></div>
             {inspection.length === 0 ? <EmptyState title="Nothing pending" description="No line is awaiting inspection." /> : (
               <div className="table-scroll">
-                <table>
+                {/* stack-on-mobile + data-label rebuild this as labeled per-row
+                    cards on phones (see style.css @media ≤640px). */}
+                <table className="stack-on-mobile">
                   <thead><tr><th>DC</th><th>Part</th><th className="num">Pending</th></tr></thead>
                   <tbody>
                     {inspection.slice(0, 12).map(row => (
                       <tr key={`${row.dc_id}-${row.part_number}`}>
-                        <td><Link className="table-primary" to={`/dc/inward/${row.dc_id}`}>{row.dc_number}</Link></td>
-                        <td>{row.part_number}</td>
-                        <td className="num">{qty(Number(row.pending_inspection_qty))}</td>
+                        <td data-label="DC"><Link className="table-primary" to={`/dc/inward/${row.dc_id}`}>{row.dc_number}</Link></td>
+                        <td data-label="Part">{row.part_number}</td>
+                        <td className="num" data-label="Pending">{qty(Number(row.pending_inspection_qty))}</td>
                       </tr>
                     ))}
                   </tbody>

@@ -140,6 +140,17 @@ describe('Delivery Challan PDF, rendered by the real pdfmake', () => {
     expect(bottom, 'bottom margin did not grow to fit the signature').toBeGreaterThanOrEqual(72)
   })
 
+  it('insets the signature block to the page margins so it lines up with the table', () => {
+    const def = buildDcDefinition(bundle(), COMPANY)
+    const footer = def.footer as ((currentPage: number, pageCount: number) => unknown)
+    const last = JSON.stringify(footer(3, 3))
+    // The footer spans the full page width; without a left/right inset the
+    // signature rules would start at the page edge while the table starts at
+    // the 36pt page margin. The inset brings them into alignment.
+    expect(last, 'signature block is not inset from the left page margin').toContain('"margin":[36,0,36,0]')
+    expect(last, 'disclaimer is not centred').toContain('"alignment":"center"')
+  })
+
   it('produces a PDF for a challan with no lines, and for a cancelled one', async () => {
     const empty = await pdfmake.createPdf(buildDcDefinition(bundle({ items: [] }), COMPANY)).getBuffer()
     expect(isPdf(empty), 'a challan with no lines did not render').toBe(true)

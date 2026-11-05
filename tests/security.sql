@@ -768,16 +768,24 @@ select sec_test.assert_error('04.staff.cannot_soft_delete_customer_directly',
 
 \echo '== 5. admin-only operations =='
 
+-- soft_delete_bill now requires a cancellation reason (0041); omitting it is
+-- refused, and a provided reason is recorded.
+select sec_test.assert_error('05.admin.soft_delete_requires_reason',
+  'authenticated', '11111111-1111-4111-8111-111111111101',
+  $$select public.soft_delete_bill('ffffffff-0000-4000-8000-000000000103'::uuid)$$,
+  'reason is required');
+
 select sec_test.assert_ok('05.admin.can_call_soft_delete_bill',
   'authenticated', '11111111-1111-4111-8111-111111111101',
-  $$select public.soft_delete_bill('ffffffff-0000-4000-8000-000000000103'::uuid)$$);
+  $$select public.soft_delete_bill('ffffffff-0000-4000-8000-000000000103'::uuid, 'duplicate entry')$$);
 
 select sec_test.assert_count('05.admin.soft_delete_took_effect',
   null, null,
   $$select id from public.bills
     where id = 'ffffffff-0000-4000-8000-000000000103'
       and deleted_at is not null
-      and deleted_by = '11111111-1111-4111-8111-111111111101'$$, 1);
+      and deleted_by = '11111111-1111-4111-8111-111111111101'
+      and cancellation_reason = 'duplicate entry'$$, 1);
 
 select sec_test.assert_ok('05.admin.can_call_restore_bill',
   'authenticated', '11111111-1111-4111-8111-111111111101',
@@ -1303,7 +1311,7 @@ select sec_test.assert_error('09.update_bill_enforces_version_conflict',
 select sec_test.assert_ok('09.update_bill_correct_version_accepted',
   'authenticated', '11111111-1111-4111-8111-111111111102',
   $$select public.update_bill('ffffffff-0000-4000-8000-000000000103'::uuid,
-       '{"notes": "fresh write"}'::jsonb, false,
+       '{"notes": "fresh write", "amount_received": 100}'::jsonb, false,
        (select version from public.bills where id = 'ffffffff-0000-4000-8000-000000000103'))
        -> 'bill' ->> 'notes'$$);
 
@@ -1455,7 +1463,8 @@ select sec_test.assert_error('10.rpc_rejects_unindexed_attachment_path',
   'authenticated', '11111111-1111-4111-8111-111111111102',
   $$select public.update_bill('ffffffff-0000-4000-8000-000000000103'::uuid,
        jsonb_build_object('attachment_path',
-         '11111111-1111-4111-8111-111111111111/2026/03/11111111-1111-4111-8111-111111111999/original.pdf')::jsonb,
+         '11111111-1111-4111-8111-111111111111/2026/03/11111111-1111-4111-8111-111111111999/original.pdf',
+         'amount_received', 100)::jsonb,
        false, (select version from public.bills where id = 'ffffffff-0000-4000-8000-000000000103'))$$,
   'was not found in the bill-attachments bucket');
 
@@ -1481,7 +1490,7 @@ select sec_test.assert_count('11.no_public_function_executable_by_anonymous',
       and has_function_privilege('anonymous', p.oid, 'EXECUTE')$$, 0);
 
 -- Guards against the assertion above passing because the catalogue query found
--- nothing at all: the 11 RPCs must actually be there.
+-- nothing at all: the 61 RPCs must actually be there.
 select sec_test.assert_count('11.every_public_rpc_is_present',
   null, null,
   $$select 1
@@ -1492,7 +1501,7 @@ select sec_test.assert_count('11.every_public_rpc_is_present',
         select 1 from pg_depend d
         where d.classid = 'pg_proc'::regclass
           and d.objid = p.oid and d.deptype = 'e'
-      )$$, 11);
+      )$$, 61);
 
 select sec_test.assert_count('11.no_table_privilege_for_anonymous',
   null, null,
@@ -1607,6 +1616,14 @@ select sec_test.assert_error('11.anonymous_cannot_call_customer_summary',
 select sec_test.assert_error('11.anonymous_cannot_call_customer_products',
   'anonymous', null, $$select * from public.customer_products('cccccccc-0000-4000-8000-000000000101'::uuid)$$, '42501');
 
+select sec_test.assert_error('11.anonymous_cannot_call_search_organizations',
+  'anonymous', null,
+  $$select * from public.search_organizations('27AAPFU0939F1ZV')$$, '42501');
+
+select sec_test.assert_error('11.anonymous_cannot_call_join_organization',
+  'anonymous', null,
+  $$select public.join_organization('11111111-1111-4111-8111-111111111111'::uuid)$$, '42501');
+
 -- The internal helper schemas are closed to anonymous as well.
 select sec_test.assert_count('11.anonymous_cannot_use_app_private_schema',
   null, null,
@@ -1640,7 +1657,7 @@ select sec_test.assert_count('11.authenticated_cannot_call_app_private_helpers',
       and has_function_privilege('authenticated', p.oid, 'EXECUTE')
       and p.proname not in (
         'is_org_member', 'has_org_role', 'can_write', 'is_org_admin',
-        'shares_org_with', 'storage_path_org'
+        'shares_org_with', 'storage_path_org', 'current_uid', 'parse_timestamp'
       )$$, 0);
 
 -- ===========================================================================
@@ -1789,6 +1806,212 @@ select sec_test.assert_count('12.KNOWN_BUG.trigram_operators_unreachable_by_auth
     from pg_namespace n
     where n.nspname = 'extensions'
       and not has_schema_privilege('authenticated', n.oid, 'USAGE')$$, 1);
+
+-- ===========================================================================
+--  13. JOIN AN EXISTING COMPANY (0044)
+--      search_organizations is the deliberate read path for non-members; it
+--      exposes only id/name/gstin/state_code of non-deleted orgs. Join always
+--      lands as viewer, refuses anyone who already belongs to an organization,
+--      and requires the target org to exist and not be soft-deleted.
+-- ===========================================================================
+
+\echo '== 13. join an existing company =='
+
+-- A soft-deleted org for the exclusion tests. Written by the superuser like
+-- every other fixture, so the assertions below are real RPC results.
+insert into public.organizations (id, name, gstin, state_code, created_by, deleted_at) values
+  ('44444444-4444-4444-8444-444444444444', 'Retired Org', '29AABCA1234B1Z5', '29', '22222222-2222-4222-8222-222222222201', now());
+
+-- Search ------------------------------------------------------------
+
+-- The return shape is exactly four columns (id, name, gstin, state_code).
+-- The key count is measured over a row the exact-match search is guaranteed to
+-- return, so a missing or extra column changes the count.
+select sec_test.assert_count('13.search.returns_only_four_columns',
+  'authenticated', '22222222-2222-4222-8222-222222222202',
+  $$select distinct k
+    from (
+      select jsonb_object_keys(to_jsonb(t)) k
+      from (select * from public.search_organizations('27AAPFU0939F1ZV') limit 1) t
+    ) s$$, 4);
+
+-- A non-member (outsider) can search; exact full GSTIN finds alpha.
+select sec_test.assert_count('13.search.exact_gstin_finds_alpha',
+  'authenticated', '22222222-2222-4222-8222-222222222202',
+  $$select * from public.search_organizations('27AAPFU0939F1ZV')$$, 1);
+
+-- Prefix search matches multiple orgs (alpha + beta share the 27A prefix;
+-- gamma has no GSTIN so it is not matched). A prefix must be at least 3
+-- characters, so the shortest allowed search is used.
+select sec_test.assert_count('13.search.prefix_gstin_finds_all_matching',
+  'authenticated', '22222222-2222-4222-8222-222222222202',
+  $$select * from public.search_organizations('27A')$$, 2);
+
+-- Name substring search, case-insensitive.
+select sec_test.assert_count('13.search.name_substring_finds_gamma',
+  'authenticated', '22222222-2222-4222-8222-222222222202',
+  $$select * from public.search_organizations(null, 'gamma')$$, 1);
+
+-- Soft-deleted orgs are excluded.
+select sec_test.assert_count('13.search.excludes_soft_deleted_org',
+  'authenticated', '22222222-2222-4222-8222-222222222202',
+  $$select * from public.search_organizations('29AAB')$$, 0);
+
+-- No matches is an empty result, not an error.
+select sec_test.assert_count('13.search.no_match_returns_empty',
+  'authenticated', '22222222-2222-4222-8222-222222222202',
+  $$select * from public.search_organizations('99XXXX')$$, 0);
+
+-- Validation: too-short input and empty query.
+select sec_test.assert_error('13.search.rejects_short_gstin',
+  'authenticated', '22222222-2222-4222-8222-222222222202',
+  $$select * from public.search_organizations('AB')$$, 'must be at least 3 characters');
+
+select sec_test.assert_error('13.search.rejects_empty_query',
+  'authenticated', '22222222-2222-4222-8222-222222222202',
+  $$select * from public.search_organizations()$$, 'enter a GSTIN or company name to search');
+
+-- Join --------------------------------------------------------------
+
+-- Outsider joins beta as viewer.
+select sec_test.assert_count('13.join.outsider_joins_beta_as_viewer',
+  'authenticated', '22222222-2222-4222-8222-222222222202',
+  $$select public.join_organization('22222222-2222-4222-8222-222222222222'::uuid)$$, 1);
+
+select sec_test.assert_count('13.join.membership_created_as_viewer',
+  null, null,
+  $$select id from public.memberships
+    where organization_id = '22222222-2222-4222-8222-222222222222'
+      and user_id = '22222222-2222-4222-8222-222222222202'
+      and role = 'viewer'$$, 1);
+
+-- The joiner's default organization was set (it was null in the fixture).
+select sec_test.assert_count('13.join.default_organization_set',
+  null, null,
+  $$select id from public.profiles
+    where id = '22222222-2222-4222-8222-222222222202'
+      and default_organization_id = '22222222-2222-4222-8222-222222222222'$$, 1);
+
+-- The viewer can now read the org's rows through RLS...
+select sec_test.assert_count('13.join.viewer_can_read_beta_customers',
+  'authenticated', '22222222-2222-4222-8222-222222222202',
+  $$select id from public.customers
+    where organization_id = '22222222-2222-4222-8222-222222222222'
+      and deleted_at is null$$, 2);
+
+-- ...but cannot write.
+select sec_test.assert_scalar('13.join.viewer_cannot_write',
+  'authenticated', '22222222-2222-4222-8222-222222222202',
+  $$select app_private.can_write('22222222-2222-4222-8222-222222222222'::uuid)$$, 'false');
+
+-- A member is refused a second organization.
+select sec_test.assert_error('13.join.refuses_second_organization',
+  'authenticated', '22222222-2222-4222-8222-222222222202',
+  $$select public.join_organization('11111111-1111-4111-8111-111111111111'::uuid)$$, 'ALREADY_BOOTSTRAPPED');
+
+-- Missing and soft-deleted targets are NOT_FOUND.
+select sec_test.assert_error('13.join.not_found_for_missing_org',
+  'authenticated', '33333333-3333-4333-8333-333333333303',
+  $$select public.join_organization('55555555-5555-4555-8555-555555555555'::uuid)$$, 'organization not found');
+
+select sec_test.assert_error('13.join.not_found_for_soft_deleted_org',
+  'authenticated', '33333333-3333-4333-8333-333333333303',
+  $$select public.join_organization('44444444-4444-4444-8444-444444444444'::uuid)$$, 'organization not found');
+
+-- Admin upgrades viewer to staff, then back to viewer: both directions.
+select sec_test.assert_ok('13.join.admin_promotes_viewer_to_staff',
+  'authenticated', '22222222-2222-4222-8222-222222222201',
+  $$select public.set_organization_member_role('22222222-2222-4222-8222-222222222202'::uuid, 'staff')$$);
+
+select sec_test.assert_scalar('13.join.promoted_staff_can_write',
+  'authenticated', '22222222-2222-4222-8222-222222222202',
+  $$select app_private.can_write('22222222-2222-4222-8222-222222222222'::uuid)$$, 'true');
+
+select sec_test.assert_ok('13.join.admin_demotes_staff_to_viewer',
+  'authenticated', '22222222-2222-4222-8222-222222222201',
+  $$select public.set_organization_member_role('22222222-2222-4222-8222-222222222202'::uuid, 'viewer')$$);
+
+select sec_test.assert_count('13.join.demotion_took_effect',
+  null, null,
+  $$select id from public.memberships
+    where organization_id = '22222222-2222-4222-8222-222222222222'
+      and user_id = '22222222-2222-4222-8222-222222222202'
+      and role = 'viewer'$$, 1);
+
+-- ===========================================================================
+--  14. IDENTITY VISIBILITY (0050)
+--      list_organization_members now resolves full_name from profiles;
+--      current_user_identity() returns the caller's own email + full_name;
+--      v_user_profiles / v_org_members are developer-only views that are NOT
+--      readable by anonymous or authenticated (they bypass RLS, so granting
+--      them to signed-in users would leak every email).
+-- ===========================================================================
+
+\echo '== 14. identity visibility =='
+
+-- current_user_identity() -------------------------------
+
+-- Anonymous is refused (backgroundECUTE revoked from anonymous → 42501).
+select sec_test.assert_error('14.identity.anonymous_cannot_call_current_user_identity',
+  'anonymous', null, $$select * from public.current_user_identity()$$, '42501');
+
+-- Admin A gets their own email and full_name back.
+select sec_test.assert_scalar('14.identity.admin_gets_own_email',
+  'authenticated', '11111111-1111-4111-8111-111111111101',
+  $$select email from public.current_user_identity()$$, 'admin-a@example.com');
+select sec_test.assert_scalar('14.identity.admin_gets_own_full_name',
+  'authenticated', '11111111-1111-4111-8111-111111111101',
+  $$select full_name from public.current_user_identity()$$, 'Admin A');
+
+-- A viewer also gets their own identity.
+select sec_test.assert_scalar('14.identity.viewer_gets_own_email',
+  'authenticated', '11111111-1111-4111-8111-111111111103',
+  $$select email from public.current_user_identity()$$, 'viewer-a@example.com');
+
+-- list_organization_members now returns full_name --------------------
+
+-- Admin A listing alpha sees Viewer A with both email and name.
+select sec_test.assert_count('14.members.returns_full_name_for_member',
+  'authenticated', '11111111-1111-4111-8111-111111111101',
+  $$select * from public.list_organization_members('11111111-1111-4111-8111-111111111111'::uuid) x
+    where x.full_name = 'Viewer A' and x.email = 'viewer-a@example.com'$$, 1);
+
+-- A non-admin cannot list members (guard unchanged by 0050).
+select sec_test.assert_error('14.members.viewer_cannot_list_members',
+  'authenticated', '11111111-1111-4111-8111-111111111103',
+  $$select * from public.list_organization_members('11111111-1111-4111-8111-111111111111'::uuid)$$, 'FORBIDDEN');
+
+-- Views exist and are NOT readable by app roles ----------------------
+
+select sec_test.assert_count('14.views.v_user_profiles_exists',
+  null, null,
+  $$select 1 from information_schema.views
+    where table_schema = 'public' and table_name = 'v_user_profiles'$$, 1);
+select sec_test.assert_count('14.views.v_org_members_exists',
+  null, null,
+  $$select 1 from information_schema.views
+    where table_schema = 'public' and table_name = 'v_org_members'$$, 1);
+
+-- Anonymous cannot read either view.
+select sec_test.assert_error('14.views.anonymous_cannot_select_v_user_profiles',
+  'anonymous', null, $$select * from public.v_user_profiles$$, '42501');
+select sec_test.assert_error('14.views.anonymous_cannot_select_v_org_members',
+  'anonymous', null, $$select * from public.v_org_members$$, '42501');
+
+-- Authenticated (even an admin) cannot read them either.
+select sec_test.assert_error('14.views.authenticated_cannot_select_v_org_members',
+  'authenticated', '11111111-1111-4111-8111-111111111101',
+  $$select * from public.v_org_members$$, '42501');
+
+-- Negative regressions: profiles still has no email column, and the auth
+-- table is still closed to authenticated.
+select sec_test.assert_count('14.negative.profiles_has_no_email_column',
+  null, null,
+  $$select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'profiles' and column_name = 'email'$$, 0);
+select sec_test.assert_error('14.negative.authenticated_cannot_select_neon_auth_user',
+  'authenticated', '11111111-1111-4111-8111-111111111101',
+  $$select * from neon_auth.user$$, '42501');
 
 -- ===========================================================================
 --  SUMMARY

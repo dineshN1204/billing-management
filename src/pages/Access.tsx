@@ -7,6 +7,8 @@ import { explainError, isAlreadyBootstrapped, isSessionRejected, needsEmailConfi
 import { landingTarget } from '../lib/navigation'
 import { db } from '../lib/db'
 
+type SearchResult = { id: string; name: string; gstin: string | null; state_code: string | null }
+
 export function SignIn() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -56,6 +58,13 @@ export function Onboarding() {
   const [leaving, setLeaving] = useState(false)
   const [error, setError] = useState('')
   const [signOutError, setSignOutError] = useState('')
+  const [mode, setMode] = useState<'create' | 'join'>('create')
+  const [joinGstin, setJoinGstin] = useState('')
+  const [joinName, setJoinName] = useState('')
+  const [results, setResults] = useState<SearchResult[] | null>(null)
+  const [searching, setSearching] = useState(false)
+  const [selected, setSelected] = useState<SearchResult | null>(null)
+  const [joiningId, setJoiningId] = useState<string | null>(null)
   async function submit(event: React.FormEvent) {
     event.preventDefault(); setBusy(true); setError('')
     try {
@@ -77,6 +86,40 @@ export function Onboarding() {
       setBusy(false)
     }
   }
+  async function search(event: React.FormEvent) {
+    event.preventDefault(); setError(''); setSelected(null); setResults(null); setSearching(true)
+    try {
+      const { data, error } = await db.rpc('search_organizations', {
+        p_gstin: joinGstin.trim() ? normalizeGstin(joinGstin) : null,
+        p_name: joinName.trim() || null,
+      })
+      if (error) throw error
+      setResults(data ?? [])
+    } catch (cause) {
+      setError(explainError(cause, 'We could not search for companies. Please try again.'))
+    } finally {
+      setSearching(false)
+    }
+  }
+  async function join(orgId: string) {
+    setJoiningId(orgId); setError('')
+    try {
+      const { error: resultError } = await db.rpc('join_organization', { p_org_id: orgId })
+      if (resultError && !isAlreadyBootstrapped(resultError)) {
+        setError(explainError(resultError, 'We could not join this company. Please try again.'))
+        return
+      }
+      // Same re-read pattern as the create path: only leave this screen once
+      // the membership is actually visible.
+      const snapshot = await refresh()
+      if (snapshot.organization) navigate('/', { replace: true })
+      else setError(snapshot.loadError ? explainError(snapshot.loadError, 'Your workspace exists but could not be loaded. Try again in a moment.') : 'Your workspace exists but could not be loaded. Try again in a moment.')
+    } catch (cause) {
+      setError(explainError(cause, 'We could not join this company. Please try again.'))
+    } finally {
+      setJoiningId(null)
+    }
+  }
   async function retry() { setRetrying(true); await refresh(); setRetrying(false) }
   async function leave() {
     setLeaving(true); setSignOutError('')
@@ -88,7 +131,21 @@ export function Onboarding() {
   if (!user) return <Navigate to="/signin" replace />
   if (organization) return <Navigate to="/" replace />
   if (loadError) return <LoadWorkspaceError message={loadError} busy={retrying} onRetry={() => { void retry() }} />
-  return <main className="setup-layout"><Card className="access-card"><div className="eyebrow">ONE-TIME SETUP</div><h1>Set up your workspace</h1><p>Create the organization that owns your records. You will be its administrator.</p><form onSubmit={submit}><Field label="Business name" required minLength={2} maxLength={120} value={name} onChange={e => setName(e.target.value)} /><Field label="Business GSTIN (optional)" value={gstin} onChange={e => setGstin(e.target.value)} />{error && <p role="alert" className="error-box">{error}</p>}<Button type="submit" disabled={busy}>{busy ? 'Creating...' : 'Create workspace'}</Button></form><div className="divider" /><p className="muted">Signed in as {user.email}</p>{signOutError && <p role="alert" className="error-box">{signOutError}</p>}<Button variant="ghost" disabled={leaving} onClick={() => void leave()}>{leaving ? 'Signing out...' : 'Sign out'}</Button></Card></main>
+  return <main className="setup-layout"><Card className="access-card"><div className="eyebrow">ONE-TIME SETUP</div><h1>Set up your workspace</h1><p>Create the organization that owns your records, or join one that already exists.</p><div className="tabs"><button type="button" className={mode === 'create' ? 'active' : ''} onClick={() => { setMode('create'); setError('') }}>Create new company</button><button type="button" className={mode === 'join' ? 'active' : ''} onClick={() => { setMode('join'); setError(''); setResults(null); setSelected(null) }}>Join existing company</button></div>{mode === 'create'
+    ? <form onSubmit={submit}><Field label="Business name" required minLength={2} maxLength={120} value={name} onChange={e => setName(e.target.value)} /><Field label="Business GSTIN (optional)" value={gstin} onChange={e => setGstin(e.target.value)} />{error && <p role="alert" className="error-box">{error}</p>}<Button type="submit" disabled={busy}>{busy ? 'Creating...' : 'Create workspace'}</Button></form>
+    : <>
+        <form onSubmit={search}><Field label="Business GSTIN" placeholder="e.g. 27AAPFU0939F1ZV" value={joinGstin} onChange={e => setJoinGstin(e.target.value)} /><Field label="Company name (optional)" value={joinName} onChange={e => setJoinName(e.target.value)} />{error && <p role="alert" className="error-box">{error}</p>}<Button type="submit" disabled={searching || joiningId !== null}>{searching ? 'Searching...' : 'Search companies'}</Button></form>
+        {results !== null && (results.length === 0
+          ? <p className="muted top-gap">No company found with that GSTIN. Double-check the number, or create a new company.</p>
+          : <div className="choices top-gap">{results.map(result => (
+              <button key={result.id} type="button" onClick={() => { setSelected(result); setError('') }}>
+                <strong>{result.name}</strong>
+                <small>{[result.gstin, result.state_code].filter(Boolean).join(' · ') || 'No GSTIN'}</small>
+              </button>
+            ))}</div>)}
+        {selected && <div className="selected-entity"><div><strong>Join {selected.name}?</strong><small>You will join as read-only. An admin can change your role later.</small></div><Button type="button" disabled={joiningId !== null} onClick={() => void join(selected.id)}>{joiningId === selected.id ? 'Joining...' : 'Confirm join'}</Button><Button variant="ghost" type="button" disabled={joiningId !== null} onClick={() => setSelected(null)}>Cancel</Button></div>}
+      </>}
+<div className="divider" /><p className="muted">Signed in as {user.email}</p>{signOutError && <p role="alert" className="error-box">{signOutError}</p>}<Button variant="ghost" disabled={leaving} onClick={() => void leave()}>{leaving ? 'Signing out...' : 'Sign out'}</Button></Card></main>
 }
 
 /**

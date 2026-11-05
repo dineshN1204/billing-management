@@ -383,8 +383,11 @@ export function buildBillDefinition(
     /* The signature belongs to the signed document, so it prints once, on the
        last page, in the bottom margin that pageMargins reserves for it. The
        extra bottom margin (was 40pt) is the only padding change - the body
-       still keeps its A4 left/right/top margins. */
-    footer: (currentPage: number, pageCount: number) => currentPage === pageCount ? signature : '',
+       still keeps its A4 left/right/top margins. The footer is inset by the
+       page's left/right margins so the signatory lines up with the item table
+       instead of starting at the page edge. */
+    footer: (currentPage: number, pageCount: number) =>
+      currentPage === pageCount ? { margin: [36, 0, 36, 0], stack: [signature] } : '',
     content: [
       header,
       { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 595 - 72, y2: 0, lineWidth: 1, lineColor: rule }] },

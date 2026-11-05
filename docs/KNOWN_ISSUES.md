@@ -170,6 +170,27 @@ under test. Worth knowing before reading a failure from it as a real defect:
 **bring the branch up to date with `npm run migrate` first**, and expect cases
 written before a migration to assert the behaviour that migration changed.
 
+The branch is now current through `0054` (`0044`, `0050`, `0051`, `0052`,
+`0053`, `0054` all applied; ledger has 50 rows). The full suite (128 cases)
+passes 128/128 as of 2026-11-02. The 14 pre-existing failures were three
+independent problems, all now resolved:
+
+- **16i/k/l/m — stale `dc_available_balance` body** (a genuine schema bug, not a
+  test artifact). The branch carried the pre-0027 body, so the customer-material
+  pool never moved on dispatch. Fixed by the forward-only migration `0053`,
+  which restores the intended 0027 body. No history rewritten.
+- **18b — the five unguarded report functions** from issue 26. Closed by
+  `0054`, which drops and recreates them as `plpgsql` with the
+  `is_org_member` guard.
+- **21a–g, 22a–b — serial-space state leakage in the suite itself** (not a
+  product bug). The serial-sensitive groups shared one `ORG`, so by group 21 the
+  plain mirror serial was already taken and the documented `-2` collision
+  fallback fired — which is the designed product behaviour, not a defect. The
+  suite now runs those groups in a dedicated fresh organization (`JOB_ORG`).
+
+A description of the identity-view default-ACL fix (`0052`) is in
+`docs/DATABASE_MAINTENANCE.md`.
+
 ---
 
 ## 9. `migrate:check` committed two migrations to production — by accident
@@ -851,18 +872,32 @@ with OUT parameters owns the row type those parameters define.
 `0032`, when the functions were still the `0017` ones and were already
 `plpgsql`. It therefore applied cleanly there, and `0032` then replaced those
 same functions with `language sql` versions — quietly undoing the guards
-`0034` had added. The branch has been running the `0032` versions ever since,
-and the database tests pass against them, because `0032` carries the same
-`is_org_member` check. The protection is there; the migration that introduced
-it is not in force.
+`0034` had added. The earlier note here said `0032` carries the same
+`is_org_member` check, so the protection was deemed intact.
 
-**Not fixed here.** The fix is a `drop function if exists` before each
-`create or replace` in `0034`, which is what `0032` itself does. That edits a
-migration that has already been applied to the test branch, so it is a
-decision about the project's history rather than part of the job-work work, and
-it is left for whoever owns the migration history. Until it is done, **`0034`
-cannot be applied to the production branch**, and the production branch's
-report functions are the `0032` ones — which are guarded, but by `0032`.
+**Checked against the live test branch (2026-11-02), that is only partly true.**
+Five of the ten functions still carry `is_org_member` (`dc_register`,
+`dc_pending_inspection`, `dc_acceptance_rate`, `dc_rejection_trend`,
+`dc_linked_bills`); **five do not** — `dc_material_rejections`,
+`dc_machining_rejections`, `dc_variance_report`, `dc_pending_customer_delivery`
+and `dc_movement_history`. That is a live authorization gap: those five are
+`SECURITY DEFINER` reports that a caller from another workspace could read by
+passing a foreign `p_org`. It is exactly the gap `0034` was written to close,
+and it is why `tests/run-dc-tests.mjs` case `18b` ("refuses every report
+function to a caller from another workspace") fails on this branch. The recent
+migrations (`0044`, `0050`, `0051`, `0052`) do not touch these functions and
+are not the cause.
+
+**Fixed 2026-11-02 by `0054_report_membership_guard_final.sql`.** It drops and
+recreates the five unguarded functions as `plpgsql` with the same signature,
+return type and body, prepending the same `is_org_member` guard `0034` uses.
+`drop function if exists` + `create function` (not `CREATE OR REPLACE`) is the
+correct mechanism because the originals are `language sql` and cannot be switched
+in place. `tests/run-dc-tests.mjs` case `18b` now passes on the test branch.
+An unguarded `language sql` version would still be recreated by applying `0032`
+(or an older `0034`) on a branch that does not have `0054`, so `0034` still
+cannot be applied to the production branch before `0054` — see the migration
+ordering note in `docs/DATABASE_MAINTENANCE.md`.
 
 ---
 
@@ -1247,10 +1282,12 @@ most likely to be wrong and least likely to be caught by the existing tests.
 - [ ] **375 px** — every form is reachable and the keyboard does not cover fields.
 - [ ] **430 px** — the same, on a large phone.
 - [ ] **768 px** — the sidebar collapses to a drawer; the backdrop dismisses it.
+- [ ] Open the sidebar drawer on a small phone. The bottom links — Challan settings and Company settings — are reachable without scrolling past the organisation footer; the nav is its own scroll region.
 - [ ] Raise an inward challan end to end: item, quantity, transport, save, finalize.
 - [ ] Record a receipt, then an inspection, and confirm the quantities reconcile.
 - [ ] Issue material to a vendor and record a **partial** return.
 - [ ] Print a challan and check the A4 layout.
+- [ ] Open the downloaded challan PDF. The Prepared by / Authorized by / Receiver signature rules start at the same left edge as the item table, and none of them run past the right edge of the page.
 - [ ] Camera capture for scanning a paper bill.
 
 ### PWA

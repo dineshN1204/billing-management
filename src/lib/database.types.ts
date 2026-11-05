@@ -50,6 +50,16 @@ export type Database = {
       soft_delete_bill: { Args: { target_bill_id: string; reason?: string | null }; Returns: Record<string, unknown> }
       restore_bill: { Args: { target_bill_id: string }; Returns: Record<string, unknown> }
       bootstrap_organization: { Args: { org_name: string; org_gstin?: string | null; org_state_code?: string | null; user_full_name?: string | null }; Returns: Record<string, unknown> }
+      /**
+       * Join an existing organization, added by db/migrations/0044_join_organization.sql.
+       * Search is open to any signed-in user; join always lands as viewer and is
+       * refused for anyone who already belongs to an organization.
+       */
+      search_organizations: {
+        Args: { p_gstin?: string | null; p_name?: string | null }
+        Returns: Array<{ id: string; name: string; gstin: string | null; state_code: string | null }>
+      }
+      join_organization: { Args: { p_org_id: string }; Returns: Record<string, unknown> }
       add_organization_member: { Args: { org_id: string; member_email: string; member_role?: string }; Returns: Record<string, unknown> }
       /**
        * Employee access, added by db/migrations/0020_employee_roles.sql.
@@ -60,7 +70,11 @@ export type Database = {
       deactivate_organization_member: { Args: { target_user_id: string }; Returns: Record<string, unknown> }
       list_organization_members: {
         Args: { target_organization_id?: string | null }
-        Returns: Array<{ user_id: string; email: string | null; role: string; member_since: string; is_you: boolean }>
+        Returns: Array<{ user_id: string; email: string | null; full_name: string | null; role: string; member_since: string; is_you: boolean }>
+      }
+      current_user_identity: {
+        Args: Record<string, never>
+        Returns: Array<{ user_id: string | null; email: string | null; full_name: string | null }>
       }
       set_customer_verification: { Args: { target_customer_id: string; new_status: string }; Returns: Customer }
       dashboard_summary: { Args: { org_id: string }; Returns: { total_customers: number; total_bills: number; total_sales: number; current_fy_sales: number; pending_amount: number; bills_this_month: number } }

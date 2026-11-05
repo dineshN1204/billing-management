@@ -11,6 +11,7 @@ import type { Role } from '../lib/types'
 type Member = {
   user_id: string
   email: string | null
+  full_name: string | null
   role: Role
   member_since: string
   is_you: boolean
@@ -47,6 +48,12 @@ const ROLE_OPTIONS: Array<[Role, string]> = [
   ['admin', 'Company admin · also manage access'],
 ]
 
+// Best available display name for a member: full name, else email, else a
+// truncated internal id. Used everywhere the member is addressed in prose.
+function memberLabel(member: Member): string {
+  return member.full_name ?? member.email ?? `${member.user_id.slice(0, 8)}…`
+}
+
 export function Settings() {
   const { organization, user, refresh } = useAuth()
   const [members, setMembers] = useState<Member[]>([])
@@ -79,6 +86,7 @@ export function Settings() {
     setMembers((plain.value.data ?? []).map(row => ({
       user_id: row.user_id as string,
       email: null,
+      full_name: null,
       role: row.role as Role,
       member_since: row.created_at as string,
       is_you: row.user_id === user?.id,
@@ -131,7 +139,7 @@ export function Settings() {
           ? 'That is the only admin. Promote someone else to admin first, or you will not be able to manage access.'
           : friendlyError(result.error))
       } else {
-        setNotice(`${member.email ?? 'That person'} is now ${next === 'admin' ? 'a company admin' : next === 'staff' ? 'staff' : 'read-only'}.`)
+        setNotice(`${memberLabel(member)} is now ${next === 'admin' ? 'a company admin' : next === 'staff' ? 'staff' : 'read-only'}.`)
         setReload(n => n + 1)
       }
     } catch (cause) {
@@ -143,7 +151,7 @@ export function Settings() {
 
   async function remove(member: Member) {
     if (busy) return
-    const who = member.email ?? 'this person'
+    const who = memberLabel(member)
     if (!window.confirm(`Remove ${who} from this workspace?\n\nThey will immediately lose access to every bill, challan, customer and stock record. Records they created are kept.`)) return
     setPendingUser(member.user_id)
     setError(''); setNotice('')
@@ -209,7 +217,9 @@ export function Settings() {
           <EmptyState title="No members listed" description="Add a teammate below to give them access." />
         ) : (
           <div className="table-scroll">
-            <table>
+            {/* stack-on-mobile + data-label rebuild this as labeled per-row
+                cards on phones (see style.css @media ≤640px). */}
+            <table className="stack-on-mobile">
               <thead>
                 <tr>
                   <th>Person</th><th>Role</th><th>Added</th>{isAdmin && <th>Change access</th>}
@@ -218,20 +228,23 @@ export function Settings() {
               <tbody>
                 {members.map(member => (
                   <tr key={member.user_id}>
-                    <td>
+                    <td data-label="Person">
                       <span className="table-primary">
-                        {member.email ?? <span className="muted mono">{member.user_id.slice(0, 8)}…</span>}
+                        {member.full_name ?? member.email ?? <span className="muted mono">{member.user_id.slice(0, 8)}…</span>}
                       </span>
+                      {member.full_name && member.email && (
+                        <span className="muted block">{member.email}</span>
+                      )}
                       {member.is_you && <span className="muted"> (you)</span>}
                     </td>
-                    <td><span className={`status ${member.role === 'admin' ? 'status-success' : member.role === 'viewer' ? 'status-warning' : ''}`}>{ROLE_INFO[member.role]?.title ?? member.role}</span></td>
-                    <td>{displayDate(member.member_since)}</td>
+                    <td data-label="Role"><span className={`status ${member.role === 'admin' ? 'status-success' : member.role === 'viewer' ? 'status-warning' : ''}`}>{ROLE_INFO[member.role]?.title ?? member.role}</span></td>
+                    <td data-label="Added">{displayDate(member.member_since)}</td>
                     {isAdmin && (
-                      <td>
+                      <td data-label="Change access">
                         <div className="inline-actions">
                           <SelectField
                             label=""
-                            aria-label={`Role for ${member.email ?? member.user_id}`}
+                            aria-label={`Role for ${memberLabel(member)}`}
                             value={member.role}
                             disabled={pendingUser === member.user_id}
                             onChange={e => void changeRole(member, e.target.value as Role)}
@@ -257,10 +270,9 @@ export function Settings() {
           </div>
         )}
 
-        {members.some(member => !member.email) && (
+        {members.some(member => !member.email && !member.full_name) && (
           <p className="muted top-gap">
-            Some addresses are not resolving. Apply migration <code className="mono">0020_employee_roles.sql</code> to show
-            each person's email instead of their internal id.
+            Some names and addresses are not resolving, so a few people appear only by their internal id.
           </p>
         )}
       </Card>

@@ -45,9 +45,10 @@ npm run migrate
 npm run dev
 ```
 
-Open `http://localhost:5173`. The first person to sign up creates the company and
-becomes its admin; everyone after that is invited from **Settings → Employee
-access**.
+Open `http://localhost:5173`. The first person to sign up creates the company
+and becomes its admin. Everyone after that either joins an existing company by
+searching its GSTIN from the setup screen (read-only until an admin upgrades
+them) or is invited from **Settings → Employee access**.
 
 Full instructions, including what each variable is for, are in
 **[docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md)**.
@@ -229,6 +230,7 @@ that would block all legitimate work.
 | `npm run migrate` | Apply `db/migrations/*.sql`. Refuses production without `--allow-production` |
 | `npm run migrate:check` | Syntax-check every migration. **Commits nothing** |
 | `npm run db:audit` | Read-only audit of the connected branch |
+| `node scripts/maintenance-delete.mjs` | Hard-delete erroneous records (preview first, guarded). See `docs/DATABASE_MAINTENANCE.md` |
 | `npm run icons` | Regenerate PWA icons after a brand-colour change |
 
 **Tests are real.** `npm run test:db` impersonates an actual workspace member the

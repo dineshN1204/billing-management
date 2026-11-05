@@ -158,6 +158,10 @@ const UID = member.rows[0].user_id
 
 const ORG = '11111111-1111-4111-8111-111111111111'
 const OTHER_ORG = '22222222-2222-4222-8222-222222222222'
+// A dedicated organization for the serial-sensitive job-work groups (21/22),
+// so the outward-mirror serial assertions run from a clean serial space instead
+// of the accumulated counters of the shared ORG.
+const JOB_ORG = '44444444-4444-4444-8444-444444444444'
 
 // The event tables (inspections, movements, machining results) are append-only
 // by design and their trigger refuses deletes even from the owner, so leftovers
@@ -167,26 +171,26 @@ async function clearFixture() {
   await q(`alter table public.dc_inspections disable trigger dc_inspections_append_only`)
   await q(`alter table public.dc_movements disable trigger dc_movements_append_only`)
   await q(`alter table public.dc_machining_results disable trigger dc_machining_results_append_only`)
-  await q('delete from public.dc_inspections where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG]])
-  await q('delete from public.dc_movements where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG]])
-  await q('delete from public.dc_machining_results where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG]])
+  await q('delete from public.dc_inspections where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG, JOB_ORG]])
+  await q('delete from public.dc_movements where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG, JOB_ORG]])
+  await q('delete from public.dc_machining_results where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG, JOB_ORG]])
   await q(`alter table public.dc_inspections enable trigger dc_inspections_append_only`)
   await q(`alter table public.dc_movements enable trigger dc_movements_append_only`)
   await q(`alter table public.dc_machining_results enable trigger dc_machining_results_append_only`)
 
-  await q('delete from public.dc_rejections where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG]])
-  await q('delete from public.dc_documents where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG]])
+  await q('delete from public.dc_rejections where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG, JOB_ORG]])
+  await q('delete from public.dc_documents where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG, JOB_ORG]])
   // The billing regression case creates a real bill against the fixture
   // customer; it has to go before the customer row can.
-  await q('delete from public.bill_items where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG]])
-  await q('delete from public.bills where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG]])
-  await q('delete from public.production_orders where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG]])
-  await q('delete from public.job_work_orders where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG]])
-  await q('delete from public.customers where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG]])
+  await q('delete from public.bill_items where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG, JOB_ORG]])
+  await q('delete from public.bills where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG, JOB_ORG]])
+  await q('delete from public.production_orders where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG, JOB_ORG]])
+  await q('delete from public.job_work_orders where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG, JOB_ORG]])
+  await q('delete from public.customers where organization_id = any($1::uuid[])', [[ORG, OTHER_ORG, JOB_ORG]])
   // Organizations are deleted rather than their memberships: the last-admin
   // trigger fires on membership changes and refuses to leave an organization
   // without one, which would make a plain cleanup impossible.
-  await q('delete from public.organizations where id = any($1::uuid[])', [[ORG, OTHER_ORG]])
+  await q('delete from public.organizations where id = any($1::uuid[])', [[ORG, OTHER_ORG, JOB_ORG]])
 }
 
 await clearFixture()
@@ -2090,29 +2094,62 @@ await test('20b. keeps the existing party records and adds a party type', async 
 
 group('Job work: inward, the outward that answers it, and the bill')
 
+// The job-work groups need a serial space of their own: they share the main
+// ORG's counters with the earlier groups, whose outward challans have already
+// taken the numbers the mirror would otherwise reuse. A dedicated organization
+// gives the 21/22 serial assertions a clean slate without weakening any of them.
+await q('reset role')
+await q(`insert into public.organizations (id, name) values ($1, 'Job Work Org')`, [JOB_ORG])
+await q(`insert into public.memberships (organization_id, user_id, role) values ($1, $2, 'admin')`, [JOB_ORG, UID])
+const jobSecondUser = await q(`select id from neon_auth.user where id <> $1 limit 1`, [UID])
+if (jobSecondUser.rows.length) {
+  await q(`insert into public.memberships (organization_id, user_id, role) values ($1, $2, 'admin')`, [JOB_ORG, jobSecondUser.rows[0].id])
+}
+await q(
+  `insert into public.customers (organization_id, name, gstin, party_type) values
+     ($1, 'Customer A', '33EEEEE0004FGZ5', 'customer'),
+     ($1, 'Customer B', '33FFFFF0005GHZ6', 'customer')`,
+  [JOB_ORG],
+)
+// Start the job-work serials above 1. The 22c/22j refusal cases need the job
+// chain's outward and a freshly created inward to carry *different* serials, as
+// they did on the shared ORG (where the chain's outward sat at a high serial).
+// On a perfectly fresh org both would be 0001 and the bill-number reservation
+// would match the outward by serial value instead of refusing.
+await q(
+  `insert into public.dc_number_sequences (organization_id, dc_type, financial_year, next_value)
+   values ($1, 'inward', '2026-27', 6), ($1, 'outward_customer', '2026-27', 6)
+   on conflict (organization_id, dc_type, financial_year)
+     do update set next_value = greatest(public.dc_number_sequences.next_value, excluded.next_value)`,
+  [JOB_ORG],
+)
+const jobCustomerId = (await q(`select id from public.customers where organization_id = $1 and name = 'Customer A'`, [JOB_ORG])).rows[0].id
+const jobCustomerBId = (await q(`select id from public.customers where organization_id = $1 and name = 'Customer B'`, [JOB_ORG])).rows[0].id
+await impersonate()
+
 let jobInward = null
 let jobInwardItem = null
 let jobOutward = null
 
 await test('21a. an outward challan that answers an inward one takes the same serial', async () => {
   const created = await saveInward({
-    organization_id: ORG, party_id: customerId, dc_date: '2026-11-02', finalize: true,
+    organization_id: JOB_ORG, party_id: jobCustomerId, dc_date: '2026-11-02', finalize: true,
     items: [{ part_number: 'KI-901', unit: 'NOS', declared_qty: 100, supply_source: 'customer_material', customer_dc_number: '500' }],
   })
   jobInward = created.document
   jobInwardItem = created.items[0].id
 
   await receive({
-    organization_id: ORG, dc_id: jobInward.id,
+    organization_id: JOB_ORG, dc_id: jobInward.id,
     lines: [{ dc_item_id: jobInwardItem, received_qty: 100, shortage_qty: 0, excess_qty: 0, damaged_qty: 0, inspection_required: true }],
   })
   await inspect({
-    organization_id: ORG, dc_id: jobInward.id,
+    organization_id: JOB_ORG, dc_id: jobInward.id,
     lines: [{ dc_item_id: jobInwardItem, accepted_qty: 90, rejected_qty: 10, pending_qty: 0, rejection_reason: 'Dimensional out of tolerance' }],
   })
 
   const outward = await saveCustomer({
-    organization_id: ORG, party_id: customerId, dc_date: '2026-11-05', finalize: true,
+    organization_id: JOB_ORG, party_id: jobCustomerId, dc_date: '2026-11-05', finalize: true,
     reference_inward_dc_id: jobInward.id,
     items: [{ part_number: 'KI-901', unit: 'NOS', declared_qty: 90, supply_source: 'customer_material', source_inward_item_id: jobInwardItem, customer_dc_number: '500' }],
   })
@@ -2138,14 +2175,14 @@ await test('21a. an outward challan that answers an inward one takes the same se
   // Something on the truck: a challan with nothing dispatched on it is nothing
   // to invoice, and the billable list says so.
   await dispatch({
-    organization_id: ORG, dc_id: outward.document.id,
+    organization_id: JOB_ORG, dc_id: outward.document.id,
     lines: [{ dc_item_id: outward.items[0].id, dispatched_qty: 85 }],
   })
 })
 
 await test('21b. a second outward for the same inward takes the next serial', async () => {
   const second = await saveCustomer({
-    organization_id: ORG, party_id: customerId, dc_date: '2026-11-06', finalize: true,
+    organization_id: JOB_ORG, party_id: jobCustomerId, dc_date: '2026-11-06', finalize: true,
     reference_inward_dc_id: jobInward.id,
     items: [{ part_number: 'KI-901', unit: 'NOS', declared_qty: 10, supply_source: 'customer_material', source_inward_item_id: jobInwardItem, customer_dc_number: '500' }],
   })
@@ -2160,7 +2197,7 @@ await test('21b. a second outward for the same inward takes the next serial', as
 await test('21c. refuses an outward challan that names another customer\'s inward', async () => {
   const failure = await assertRejects(
     () => saveCustomer({
-      organization_id: ORG, party_id: customerBId, dc_date: '2026-11-07',
+      organization_id: JOB_ORG, party_id: jobCustomerBId, dc_date: '2026-11-07',
       reference_inward_dc_id: jobInward.id,
       items: [{ part_number: 'KI-901', unit: 'NOS', declared_qty: 5, supply_source: 'finished_stock' }],
     }),
@@ -2175,12 +2212,12 @@ await test('21d. refuses a line drawn from a different inward while a reference 
   // The number says the whole challan answers one inward challan, so a line
   // drawn from somewhere else would make the number a lie.
   const other = await saveInward({
-    organization_id: ORG, party_id: customerId, dc_date: '2026-11-08', finalize: true,
+    organization_id: JOB_ORG, party_id: jobCustomerId, dc_date: '2026-11-08', finalize: true,
     items: [{ part_number: 'KI-902', unit: 'NOS', declared_qty: 10, supply_source: 'customer_material' }],
   })
   await assertRejects(
     () => saveCustomer({
-      organization_id: ORG, party_id: customerId, dc_date: '2026-11-09',
+      organization_id: JOB_ORG, party_id: jobCustomerId, dc_date: '2026-11-09',
       reference_inward_dc_id: jobInward.id,
       items: [{ part_number: 'KI-902', unit: 'NOS', declared_qty: 5, supply_source: 'customer_material', source_inward_item_id: other.items[0].id }],
     }),
@@ -2190,14 +2227,14 @@ await test('21d. refuses a line drawn from a different inward while a reference 
 })
 
 await test('21e. the inward challan says the work is in process once the outward is raised', async () => {
-  const progress = await rpcRows('dc_job_progress', ['::uuid', '::uuid'], ORG, jobInward.id)
+  const progress = await rpcRows('dc_job_progress', ['::uuid', '::uuid'], JOB_ORG, jobInward.id)
   const document = progress.find(row => row.scope === 'document')
   assert(document, 'the job progress of an inward challan must be reported')
   assertEqual(document.job_status, 'in_progress', 'an inward challan with an outward challan against it is work in process')
 })
 
 await test('21f. lists the outward challans that answer an inward challan', async () => {
-  const outwards = await rpcRows('dc_outward_challans_for_inward', ['::uuid', '::uuid'], ORG, jobInward.id)
+  const outwards = await rpcRows('dc_outward_challans_for_inward', ['::uuid', '::uuid'], JOB_ORG, jobInward.id)
   assertEqual(
     outwards.map(row => row.dc_number).sort(),
     [jobOutward.dc_number, `${jobOutward.dc_number}-2`].sort(),
@@ -2207,25 +2244,25 @@ await test('21f. lists the outward challans that answer an inward challan', asyn
 
 await test('21g. a bill can carry the customer\'s own challan number, and it is found by it', async () => {
   const bill = await rpc('save_bill', {
-    organization_id: ORG, customer_id: customerId, bill_number: 'JOB-1', bill_date: '2026-11-06',
+    organization_id: JOB_ORG, customer_id: jobCustomerId, bill_number: 'JOB-1', bill_date: '2026-11-06',
     tax_mode: 'intra', payment_status: 'unpaid', source_type: 'manual', verification_status: 'unverified',
     items: [{ product_name: 'KI-901', unit: 'NOS', quantity: '90', rate: '250.00', discount: '0', gst_rate: '18' }],
   }, false)
 
   await rpc('set_bill_dc_references', {
-    organization_id: ORG, bill_id: bill.bill.id, customer_dc_reference: '500, 503',
+    organization_id: JOB_ORG, bill_id: bill.bill.id, customer_dc_reference: '500, 503',
   })
 
   const stored = await q(`select customer_dc_reference from public.bills where id = $1`, [bill.bill.id])
   assertEqual(stored.rows[0].customer_dc_reference, '500, 503', 'the customer DC number is stored on the bill')
 
-  const found = await rpcRows('bill_ids_for_customer_dc', ['::uuid', '::text'], ORG, '503')
+  const found = await rpcRows('bill_ids_for_customer_dc', ['::uuid', '::text'], JOB_ORG, '503')
   assert(found.some(row => row.bill_id === bill.bill.id),
     'searching the customer DC number must find the bill that carries it')
 
   // The billable challans of a customer are the ones a new bill can be raised
   // against: finalized, with something dispatched on them.
-  const billable = await rpcRows('dc_billable_documents', ['::uuid', '::uuid'], ORG, customerId)
+  const billable = await rpcRows('dc_billable_documents', ['::uuid', '::uuid'], JOB_ORG, jobCustomerId)
   assert(billable.some(row => row.dc_id === jobOutward.id),
     'the outward challan must be offered for billing')
   assert(billable.every(row => Number(row.total_dispatched) > 0),
@@ -2234,24 +2271,24 @@ await test('21g. a bill can carry the customer\'s own challan number, and it is 
 
 await test('21h. refuses a bill reference written by somebody with no write access', async () => {
   const bill = await rpc('save_bill', {
-    organization_id: ORG, customer_id: customerId, bill_number: 'JOB-2', bill_date: '2026-11-06',
+    organization_id: JOB_ORG, customer_id: jobCustomerId, bill_number: 'JOB-2', bill_date: '2026-11-06',
     tax_mode: 'intra', payment_status: 'unpaid', source_type: 'manual', verification_status: 'unverified',
     items: [{ product_name: 'KI-901', unit: 'NOS', quantity: '1', rate: '250.00', discount: '0', gst_rate: '18' }],
   }, false)
 
   await q('reset role')
-  await q(`update public.memberships set role = 'viewer' where organization_id = $1 and user_id = $2`, [ORG, UID])
+  await q(`update public.memberships set role = 'viewer' where organization_id = $1 and user_id = $2`, [JOB_ORG, UID])
   await q(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: UID, role: 'authenticated' })])
   await q('set local role authenticated')
 
   await assertRejects(
-    () => rpc('set_bill_dc_references', { organization_id: ORG, bill_id: bill.bill.id, customer_dc_reference: '999' }),
+    () => rpc('set_bill_dc_references', { organization_id: JOB_ORG, bill_id: bill.bill.id, customer_dc_reference: '999' }),
     'FORBIDDEN',
     'a viewer must not be able to write a bill reference',
   )
 
   await q('reset role')
-  await q(`update public.memberships set role = 'admin' where organization_id = $1 and user_id = $2`, [ORG, UID])
+  await q(`update public.memberships set role = 'admin' where organization_id = $1 and user_id = $2`, [JOB_ORG, UID])
   await q(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: UID, role: 'authenticated' })])
   await q('set local role authenticated')
 })
@@ -2293,49 +2330,49 @@ let raisedBill = null
 await test('22a. a bill raised from a challan carries that challan\'s serial', async () => {
   const { year, serial } = numberParts(jobOutward.dc_number)
 
-  const reserved = await reserveNumber(ORG, jobOutward.dc_date, `${year}/${serial}`, [jobOutward.id])
+  const reserved = await reserveNumber(JOB_ORG, jobOutward.dc_date, `${year}/${serial}`, [jobOutward.id])
   assertEqual(reserved.bill_number, `${year}/${serial}`, 'the bill carries the challan\'s serial')
 
   raisedBill = await rpc('save_bill', {
-    organization_id: ORG, customer_id: customerId, bill_number: reserved.bill_number, bill_date: jobOutward.dc_date,
+    organization_id: JOB_ORG, customer_id: jobCustomerId, bill_number: reserved.bill_number, bill_date: jobOutward.dc_date,
     tax_mode: 'intra', payment_status: 'unpaid', source_type: 'manual', verification_status: 'unverified',
     items: [{ product_name: 'KI-901', unit: 'NOS', quantity: '85', rate: '250.00', discount: '0', gst_rate: '18' }],
   }, false)
   assertEqual(raisedBill.bill.bill_number, `${year}/${serial}`, 'the saved bill carries the number it was given')
 
   // The link is accepted: the bill and the challan are the same job.
-  await rpc('dc_link_bills', { organization_id: ORG, dc_id: jobOutward.id, bills: [{ bill_id: raisedBill.bill.id }] })
-  const links = await rpcRows('dc_linked_bills', ['::uuid', '::uuid'], ORG, jobOutward.id)
+  await rpc('dc_link_bills', { organization_id: JOB_ORG, dc_id: jobOutward.id, bills: [{ bill_id: raisedBill.bill.id }] })
+  const links = await rpcRows('dc_linked_bills', ['::uuid', '::uuid'], JOB_ORG, jobOutward.id)
   assert(links.some(row => row.bill_id === raisedBill.bill.id), 'the bill is attached to the challan it pays for')
 })
 
 await test('22b. the bill is found by the number of the challan it pays for', async () => {
   const { serial } = numberParts(jobOutward.dc_number)
-  const found = await rpcRows('bill_ids_for_dc_number', ['::uuid', '::text'], ORG, serial)
+  const found = await rpcRows('bill_ids_for_dc_number', ['::uuid', '::text'], JOB_ORG, serial)
   assert(found.some(row => row.bill_id === raisedBill.bill.id), 'searching the serial finds the bill')
 
   // And by its own number, which is the same serial.
-  const byNumber = await rpcRows('bill_ids_for_dc_number', ['::uuid', '::text'], ORG, raisedBill.bill.bill_number)
+  const byNumber = await rpcRows('bill_ids_for_dc_number', ['::uuid', '::text'], JOB_ORG, raisedBill.bill.bill_number)
   assert(byNumber.some(row => row.bill_id === raisedBill.bill.id), 'searching the bill number finds the bill too')
 })
 
 await test('22c. a number that names another challan is refused', async () => {
   // A challan in a financial year nobody has used, so its serial is its own.
   const created = await saveInward({
-    organization_id: ORG, party_id: customerId, dc_date: FRESH_DATE, finalize: true,
+    organization_id: JOB_ORG, party_id: jobCustomerId, dc_date: FRESH_DATE, finalize: true,
     items: [{ part_number: 'KI-903', unit: 'NOS', declared_qty: 5, supply_source: 'customer_material' }],
   })
   otherInward = created.document
   const { year, serial } = numberParts(otherInward.dc_number)
   await assertRejects(
-    () => reserveNumber(ORG, FRESH_DATE, `${year}/${serial}`, [jobOutward.id]),
+    () => reserveNumber(JOB_ORG, FRESH_DATE, `${year}/${serial}`, [jobOutward.id]),
     'VALIDATION_ERROR',
     'a bill may not take the number of a challan it does not pay for',
   )
 })
 
 await test('22d. a bill raised by hand takes a number no challan holds', async () => {
-  const reserved = await reserveNumber(ORG, FRESH_DATE, null, [])
+  const reserved = await reserveNumber(JOB_ORG, FRESH_DATE, null, [])
   assert(/^\d{4}-\d{2}\/\d{4}$/.test(reserved.bill_number), 'the number is the financial year and a serial')
   assertEqual(reserved.bill_number.split('/')[0], FRESH_YEAR, 'the number is in the bill\'s own financial year')
 
@@ -2345,21 +2382,21 @@ await test('22d. a bill raised by hand takes a number no challan holds', async (
   const held = await q(
     `select d.dc_number from public.dc_documents d
       where d.organization_id = $1 and d.dc_number ~ ('/' || $2 || '$') and d.dc_number ilike ('%/' || $3 || '/%')`,
-    [ORG, serial, FRESH_YEAR],
+    [JOB_ORG, serial, FRESH_YEAR],
   )
   assert(held.rows.length === 0, 'a bill raised by hand never takes a serial a challan holds')
 })
 
 await test('22e. a number another bill holds cannot be taken twice', async () => {
-  const first = await reserveNumber(ORG, FRESH_DATE, null, [])
+  const first = await reserveNumber(JOB_ORG, FRESH_DATE, null, [])
   await rpc('save_bill', {
-    organization_id: ORG, customer_id: customerId, bill_number: first.bill_number, bill_date: FRESH_DATE,
+    organization_id: JOB_ORG, customer_id: jobCustomerId, bill_number: first.bill_number, bill_date: FRESH_DATE,
     tax_mode: 'intra', payment_status: 'unpaid', source_type: 'manual', verification_status: 'unverified',
     items: [{ product_name: 'KI-905', unit: 'NOS', quantity: '1', rate: '100.00', discount: '0', gst_rate: '18' }],
   }, false)
 
   await assertRejects(
-    () => reserveNumber(ORG, FRESH_DATE, first.bill_number, []),
+    () => reserveNumber(JOB_ORG, FRESH_DATE, first.bill_number, []),
     'VALIDATION_ERROR',
     'a number another bill already holds cannot be taken again',
   )
@@ -2369,17 +2406,17 @@ await test('22f. a challan never takes a serial a bill already holds', async () 
   // A bill raised by hand takes the first number of a financial year nobody
   // has used, and the first challan of that year must move past it.
   const date = '2028-04-01'
-  const reserved = await reserveNumber(ORG, date, null, [])
+  const reserved = await reserveNumber(JOB_ORG, date, null, [])
   const serial = reserved.bill_number.split('/').pop()
 
   await rpc('save_bill', {
-    organization_id: ORG, customer_id: customerId, bill_number: reserved.bill_number, bill_date: date,
+    organization_id: JOB_ORG, customer_id: jobCustomerId, bill_number: reserved.bill_number, bill_date: date,
     tax_mode: 'intra', payment_status: 'unpaid', source_type: 'manual', verification_status: 'unverified',
     items: [{ product_name: 'KI-906', unit: 'NOS', quantity: '1', rate: '200.00', discount: '0', gst_rate: '18' }],
   }, false)
 
   const created = await saveInward({
-    organization_id: ORG, party_id: customerId, dc_date: date, finalize: true,
+    organization_id: JOB_ORG, party_id: jobCustomerId, dc_date: date, finalize: true,
     items: [{ part_number: 'KI-907', unit: 'NOS', declared_qty: 5, supply_source: 'customer_material' }],
   })
   assert(created.document.dc_number !== `KI/IN/2028-29/${serial}`,
@@ -2388,15 +2425,15 @@ await test('22f. a challan never takes a serial a bill already holds', async () 
 
 await test('22g. the link refuses a bill whose number names another challan', async () => {
   // A number of our own making, one the challan in that year does not hold.
-  const other = await reserveNumber(ORG, FRESH_DATE, `${FRESH_YEAR}/0009`, [])
+  const other = await reserveNumber(JOB_ORG, FRESH_DATE, `${FRESH_YEAR}/0009`, [])
   const bill = await rpc('save_bill', {
-    organization_id: ORG, customer_id: customerId, bill_number: other.bill_number, bill_date: FRESH_DATE,
+    organization_id: JOB_ORG, customer_id: jobCustomerId, bill_number: other.bill_number, bill_date: FRESH_DATE,
     tax_mode: 'intra', payment_status: 'unpaid', source_type: 'manual', verification_status: 'unverified',
     items: [{ product_name: 'KI-908', unit: 'NOS', quantity: '2', rate: '300.00', discount: '0', gst_rate: '18' }],
   }, false)
 
   await assertRejects(
-    () => rpc('dc_link_bills', { organization_id: ORG, dc_id: otherInward.id, bills: [{ bill_id: bill.bill.id }] }),
+    () => rpc('dc_link_bills', { organization_id: JOB_ORG, dc_id: otherInward.id, bills: [{ bill_id: bill.bill.id }] }),
     'VALIDATION_ERROR',
     'a bill whose number names another challan cannot be attached to it',
   )
@@ -2405,13 +2442,13 @@ await test('22g. the link refuses a bill whose number names another challan', as
 await test('22h. a number from outside the series is kept as it is typed', async () => {
   // A bill typed in from paper carries the number printed on that paper. It
   // belongs to no series, holds no serial and is not the database's to make.
-  const reserved = await reserveNumber(ORG, FRESH_DATE, 'INV-99', [])
+  const reserved = await reserveNumber(JOB_ORG, FRESH_DATE, 'INV-99', [])
   assertEqual(reserved.bill_number, 'INV-99', 'the number is kept exactly as it was typed')
 })
 
 await test('22i. a number in the wrong financial year is refused', async () => {
   await assertRejects(
-    () => reserveNumber(ORG, FRESH_DATE, '2025-26/0042', []),
+    () => reserveNumber(JOB_ORG, FRESH_DATE, '2025-26/0042', []),
     'VALIDATION_ERROR',
     'the financial year on the number must be the bill\'s own',
   )
@@ -2423,14 +2460,14 @@ await test('22j. the serial is compared by its value, not by its padding', async
   // as one.
   const { year, serial } = numberParts(jobOutward.dc_number)
   const short = `${year}/${Number(serial)}`
-  const reserved = await reserveNumber(ORG, jobOutward.dc_date, short, [jobOutward.id])
+  const reserved = await reserveNumber(JOB_ORG, jobOutward.dc_date, short, [jobOutward.id])
   assertEqual(reserved.bill_number, short, 'the serial is recognised whatever its padding')
 
   // And a number that is only a different padding of another challan's serial
   // is still that challan's number.
   const { year: otherYear, serial: otherSerial } = numberParts(otherInward.dc_number)
   await assertRejects(
-    () => reserveNumber(ORG, FRESH_DATE, `${otherYear}/${Number(otherSerial)}`, [jobOutward.id]),
+    () => reserveNumber(JOB_ORG, FRESH_DATE, `${otherYear}/${Number(otherSerial)}`, [jobOutward.id]),
     'VALIDATION_ERROR',
     'a number that is another challan\'s serial is refused whatever its padding',
   )
