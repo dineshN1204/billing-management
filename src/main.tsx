@@ -132,4 +132,21 @@ function App() {
   return <AppRoutes />
 }
 
+// GitHub Pages serves 404.html for unknown client-side routes. The 404.html
+// above redirects here with ?__path=/original/route so React Router can load
+// the intended screen instead of landing on the homepage.
+(function () {
+  var params = new URLSearchParams(window.location.search);
+  var spaPath = params.get('__path');
+  if (spaPath) {
+    params.delete('__path');
+    var qs = params.toString();
+    window.history.replaceState(
+      null,
+      '',
+      '/' + spaPath + (qs ? '?' + qs : '') + window.location.hash
+    );
+  }
+})();
+
 createRoot(document.getElementById('root')!).render(<StrictMode><BrowserRouter><AuthProvider><App /></AuthProvider></BrowserRouter></StrictMode>)
