@@ -66,7 +66,7 @@ export function Scan() {
         } catch (cause) { invokeError = cause }
         const { data: refreshed } = await db.from('ocr_jobs').select('*').eq('id', data.id).single()
         if (refreshed) setJobs(old => old.map(job => job.id === refreshed.id ? refreshed as OcrJob : job))
-        if (invokeError) { setError('A document could not be processed. You can retry it below.'); continue }
+        if (invokeError) { setError(explainError(invokeError, 'A document could not be processed. You can retry it below.')); continue }
         if (files.length === 1) { navigate(`/scan/review/${data.id}`); break }
       } catch (cause) { setError(explainError(cause, 'The scan could not be uploaded. Please try again.')) }
     }
