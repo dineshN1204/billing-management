@@ -1298,6 +1298,8 @@ most likely to be wrong and least likely to be caught by the existing tests.
 - [ ] Deep link `/dc/inward/<id>` pasted into a fresh tab. Works after refresh.
 - [ ] Confirm no business data appears in DevTools → Application → Cache Storage.
 
+**Fixed.** Tapping "Update now" on the update banner threw `updateServiceWorker is not a function` because `registerSW()` returns the update function directly, not an object with an `updateServiceWorker` property. The fix calls the returned function directly, types it from `vite-plugin-pwa/client` (no hand-written declaration), and enables `clientsClaim` in `vite.config.ts` so an accepted update actually reloads the page. Dismissals are now keyed by a SHA-256 hash of the worker script so they are per-build rather than per-origin.
+
 ### Data integrity
 
 - [ ] Raise a bill with multiple items and a discount. Check CGST/SGST and the total against a manual calculation.

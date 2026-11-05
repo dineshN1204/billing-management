@@ -7,7 +7,14 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
-type RegisteredWorker = { updateServiceWorker: (reloadPage?: boolean) => Promise<void> }
+/**
+ * `virtual:pwa-register` has no file on disk, so TypeScript needs this
+ * declaration to resolve the dynamic import. The plugin's own types
+ * (via `/// <reference types="vite-plugin-pwa/client" />` in vite-env.d.ts)
+ * describe `registerSW` returning the update function directly, not an object
+ * with an `updateServiceWorker` property.
+ */
+type UpdateWorker = (reloadPage?: boolean) => Promise<void>
 
 export type PwaState = {
   /** A new build is ready; the user chooses when to switch to it. */
@@ -32,14 +39,14 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 let deferredInstall: BeforeInstallPromptEvent | null = null
-let cachedRegister: RegisteredWorker | null = null
+let cachedUpdate: UpdateWorker | null = null
 /**
  * Identifies the build whose update was dismissed.
  *
  * A dismissal has to stop nagging about *that* build only. Without this the flag
  * would be permanent, and an employee who dismissed once would never be offered
- * a fix for a real bug. The value comes from the worker script's own URL, which
- * changes whenever the build does.
+ * a fix for a real bug. The value is a SHA-256 hash of the service worker
+ * script itself, which changes whenever the build does.
  */
 let dismissedFor = ''
 
@@ -65,19 +72,23 @@ export function usePwa(): PwaState {
     void import('virtual:pwa-register')
       .then(({ registerSW }) => {
         if (disposed) return
-        cachedRegister = registerSW({
+        // registerSW returns the update function directly (not an object with an
+        // `updateServiceWorker` property). Calling it sends skipWaiting to the
+        // new worker, which then takes control and reloads the page.
+        cachedUpdate = registerSW({
           immediate: true,
-          onNeedRefresh: () => {
+          onNeedRefresh: async () => {
             // A user who dismissed the prompt once is not asked again for this
             // same build. The flag is cleared by applyUpdate, so the next real
             // release still surfaces.
             if (window.localStorage.getItem(UPDATE_DISMISSED) === dismissedFor) return
             setUpdateReady(true)
           },
-          onRegisteredSW: (swUrl) => {
-            // Remember which build was dismissed so the prompt can be silenced
-            // for that build only.
-            dismissedFor = swUrl
+          onRegisteredSW: async (swUrl) => {
+            // Identify the build by a hash of its worker script, which changes
+            // whenever the build changes. A per-build dismissal key lets the
+            // next release surface its own prompt after one was dismissed.
+            dismissedFor = await hashSw(swUrl)
           },
           onOfflineReady: () => { if (!disposed) setOfflineReady(true) },
           onRegisterError: error => {
@@ -133,20 +144,42 @@ export function usePwa(): PwaState {
 
   const applyUpdate = useCallback(async () => {
     window.localStorage.removeItem(UPDATE_DISMISSED)
-    if (cachedRegister) {
-      // Reloads so the new bundle actually takes effect. Safe here precisely
-      // because no write is in flight: every mutation is a single RPC that either
-      // committed or did not.
-      await cachedRegister.updateServiceWorker(true)
+    if (cachedUpdate) {
+      // Sends skipWaiting to the waiting worker. The worker then takes control
+      // (clients.claim is enabled in vite.config.ts) and the page reloads so
+      // the new bundle takes effect. Safe here precisely because no write is
+      // in flight: every mutation is a single RPC that either committed or did
+      // not.
+      await cachedUpdate(true)
     } else {
       window.location.reload()
     }
   }, [])
 
   const dismissUpdate = useCallback(() => {
+    if (!dismissedFor) return
     window.localStorage.setItem(UPDATE_DISMISSED, dismissedFor)
     setUpdateReady(false)
   }, [])
+
+  /**
+   * Hashes the service worker script at swUrl so a dismissal is tied to a
+   * specific build. Falls back to the empty string (no dismissal persisted)
+   * if the script cannot be fetched, rather than persisting a key that would
+   * silence prompts for every build.
+   */
+  async function hashSw(swUrl: string): Promise<string> {
+    try {
+      const bytes = await (await fetch(swUrl)).arrayBuffer()
+      const hash = await crypto.subtle.digest('SHA-256', bytes)
+      const hex = Array.from(new Uint8Array(hash))
+        .map(byte => byte.toString(16).padStart(2, '0'))
+        .join('')
+      return hex
+    } catch {
+      return ''
+    }
+  }
 
   const promptInstall = useCallback(async () => {
     if (!deferredInstall) return

@@ -72,6 +72,11 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api\//, /^\/icons\//],
         // Workbox's own cleanup, so a renamed precache file is not kept forever.
         cleanupOutdatedCaches: true,
+        // Without clientsClaim the new worker activates but never takes control
+        // of the page that is already open, so accept-update reload never fires
+        // until the user manually refreshes. With prompt mode this is safe: the
+        // swap only happens after the user tapped "Update now" and skipWaiting.
+        clientsClaim: true,
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },
       devOptions: {

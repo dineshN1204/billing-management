@@ -71,6 +71,13 @@ if (existsSync(swPath)) {
   check(/NavigationRoute|navigateFallback|createHandlerBoundToURL/.test(sw),
     'Service worker has no navigation fallback. Opening or refreshing a deep link would fail.')
 
+  // clientsClaim makes the new worker take control of the open page after
+  // skipWaiting, so the prompt-mode reload fires when "Update now" is tapped.
+  // Without it the worker activates but the page keeps running the old bundle
+  // until a manual refresh.
+  check(/clientsClaim\(\)|clients\.claim\(\)/.test(sw),
+    'Service worker does not call clients.claim(); an accepted update will not reload the page.')
+
   const precacheCount = (sw.match(/revision:/g) ?? []).length
   notes.push(`Service worker precaches ${precacheCount} build assets (no runtime caching of any kind).`)
 }
