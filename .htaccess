@@ -1,0 +1,48 @@
+# Apache / LiteSpeed (Hostinger) configuration.
+#
+# Hostinger does not fall back to index.html for unknown paths, so a direct
+# request to /dashboard or a refresh on /dc/inward/123 returns a 404 unless the
+# server is told to hand every non-file request to the SPA shell.
+#
+# GitHub Pages uses public/404.html instead; this file is what the same build
+# needs when it is served by Hostinger. It is inert on GitHub Pages.
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Never rewrite the shell itself.
+  RewriteRule ^index\.html$ - [L]
+
+  # Static and API paths are not client-side routes. Missing files here should
+  # keep returning a real 404 instead of the HTML shell.
+  RewriteCond %{REQUEST_URI} ^/(assets|icons|api)/
+  RewriteRule ^ - [L]
+
+  # Real files and directories (assets, icons, sw.js, manifest) are served as-is.
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Everything else is a client-side route: serve the app shell with HTTP 200.
+  RewriteRule . /index.html [L]
+</IfModule>
+
+<IfModule mod_headers.c>
+  # Hashed build output never changes under the same name.
+  <FilesMatch "\.(js|css|woff2?|png|jpg|jpeg|svg|ico)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+
+  # The shell and the manifest must be revalidated so a new build is noticed.
+  <FilesMatch "^(index\.html|manifest\.webmanifest)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+
+  # A cached service worker is the classic reason an update never arrives.
+  # This rule comes last so it wins over the generic .js rule above.
+  <FilesMatch "^sw\.js$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Service-Worker-Allowed "/"
+  </FilesMatch>
+</IfModule>
