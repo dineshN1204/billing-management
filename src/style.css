@@ -653,3 +653,170 @@ td .status, .detail-list .status { display: inline-block; }
 
 /* A card whose only content is a heading and a paragraph still needs room. */
 .dc-card > h2:first-child { margin-bottom: 8px; }
+
+/* DC register filter drawer -------------------------------------------------
+   The inward and outward registers carry five controls: search, DC status, job
+   status, a from date and a to date. Side by side they need roughly 1110px of
+   toolbar width, which a tablet does not have - the row wrapped to three lines
+   and pushed the register off the first screen. Below 1280px the search field
+   keeps the first line with a filter button at its right edge; the remaining
+   controls wait behind it and open on demand. Above 1280px the wrappers are
+   transparent to layout and the toolbar renders exactly as before. */
+.dc-list-search-row,
+.dc-list-filters { display: contents; }
+.dc-list-filter-toggle { display: none; }
+
+@media (max-width: 1280px) {
+  .dc-list-toolbar { display: block; }
+  .dc-list-search-row { display: flex; align-items: center; gap: 10px; }
+  .dc-list-search-row input:not([type="checkbox"]):not([type="date"]) {
+    width: auto;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 42px;
+  }
+  .dc-list-filter-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 42px;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border: 1px solid #dce5e1;
+    border-radius: 7px;
+    background: #fff;
+    color: #51706c;
+    cursor: pointer;
+  }
+  .dc-list-filter-toggle:hover { background: #f0f6f2; color: #126e5e; }
+  .dc-list-filter-toggle.active { background: #e6f6ef; border-color: #4aa994; color: #126e5e; }
+  .dc-list-filters { display: none; }
+  .dc-list-filters.open {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .dc-list-filters select {
+    flex: 1 1 160px;
+    width: auto;
+    min-width: 0;
+    min-height: 42px;
+  }
+  .dc-list-filters .inline-control { flex: 1 1 200px; }
+  .dc-list-filters .inline-control input {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+    min-height: 42px;
+  }
+}
+
+@media (max-width: 640px) {
+  .dc-list-filters.open { flex-direction: column; align-items: stretch; }
+  .dc-list-filters .inline-control { justify-content: space-between; }
+}
+
+/* Mobile reachability --------------------------------------------------------
+   `.content` clips horizontal overflow at phone widths as a last-resort guard
+   (see the 640px block above). Clipping is not a fix: anything wider than the
+   phone stays unreachable. Each row below was an actual overflow source, given
+   its own way to shrink, wrap or pan so the guard has nothing left to hide.
+   Desktop layout is unchanged except where wrapping only happens when needed. */
+
+/* Tabs: a customer profile carries five tabs and the setup card carries two.
+   Wrapping would turn the tab row into a second menu, so the strip pans
+   sideways instead. Non-shrinking, non-wrapping buttons keep every label
+   readable and preserve their 16px hit padding. */
+.tabs {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+.tabs button { flex: 0 0 auto; white-space: nowrap; }
+
+/* The topbar search is the only flexible item in the bar. Without an explicit
+   min-width the input's intrinsic width (its default `size`) wins the flex
+   negotiation and pushes the whole bar past a 320px viewport, giving the page
+   a horizontal scrollbar even though `.content` is clipped. */
+.global-search,
+.global-search input { min-width: 0; }
+.global-search > svg { flex: 0 0 auto; }
+
+/* Flex rows that pair a name/label with actions need permission to wrap; the
+   action group used to be pushed past the card edge on narrow screens. */
+.section-header,
+.document-header,
+.form-actions,
+.modal-actions { flex-wrap: wrap; }
+.section-header,
+.document-header { row-gap: 10px; }
+.document-header > div { min-width: 0; }
+.document-header small { overflow-wrap: anywhere; }
+
+/* Long single words - challan numbers, company names, part numbers - must be
+   allowed to break instead of widening their row. */
+.search-results strong,
+.selected-entity strong,
+.selected-entity small,
+.dc-picker-selected strong,
+.dc-picker-selected small,
+.choices strong,
+.product-suggestions strong,
+.dc-picker-results strong { overflow-wrap: anywhere; }
+.selected-entity > * { min-width: 0; }
+.dc-picker-selected > div { min-width: 0; }
+.dc-picker-selected button { flex: 0 0 auto; }
+
+/* Search suggestions pair a name with a code. Only the name may wrap; the code
+   keeps its intrinsic width. */
+.product-suggestions button small { flex: 0 0 auto; }
+
+/* The table scrolls inside its card; keep the scroll affordance light and stop
+   a sideways swipe at the table edge from scrolling the page instead. */
+.table-scroll {
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 640px) {
+  /* Results stack in the phone-width popover. Left as a row, the nowrap meta
+     line (date, amount, matched field) was the widest thing in the panel and
+     was clipped by `.content`'s overflow guard. */
+  .search-results a {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+  .search-results small { white-space: normal; }
+
+  /* "24 records · Page 1 of 2" plus two buttons does not fit a card's inner
+     width at 320px. The count takes its own line; Previous/Next split the next
+     line and get a full-width touch target. */
+  .pagination { flex-wrap: wrap; row-gap: 10px; }
+  .pagination > div { width: 100%; }
+  .pagination .button { flex: 1 1 0; min-height: 40px; }
+
+  /* Multi-button form/dialog footers wrap instead of clipping the trailing
+     action. Each button grows to a comfortable touch target when the row does
+     wrap. */
+  .form-actions .button,
+  .modal-actions .button { flex: 1 1 160px; }
+
+  /* The selected-party block pairs a long name with Confirm/Cancel (or a
+     Change button). It wraps and stops reserving an auto margin for an action
+     that has already moved to its own line. */
+  .selected-entity { flex-wrap: wrap; align-items: flex-start; }
+  .selected-entity .button { margin-left: 0; }
+
+  /* A stacked row is a label/value pair. A cell holding a control group
+     (Settings' role select + Remove) needs that group on its own line rather
+     than squeezed beside the label. */
+  table.stack-on-mobile td { flex-wrap: wrap; }
+  table.stack-on-mobile td[data-label]::before { flex: 0 0 auto; }
+  table.stack-on-mobile td > * { max-width: 100%; }
+  table.stack-on-mobile td > .inline-actions { flex: 1 1 100%; justify-content: flex-end; }
+}

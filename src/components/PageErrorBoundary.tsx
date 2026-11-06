@@ -50,7 +50,7 @@ export class PageErrorBoundary extends Component<Props, State> {
             <button type="button" className="button button-secondary" onClick={() => this.setState({ error: null })}>
               Try again
             </button>
-            <button type="button" className="button button-primary" onClick={() => { window.location.href = '/dashboard' }}>
+            <button type="button" className="button button-primary" onClick={() => { window.location.href = '/billing-dashboard' }}>
               Back to the overview
             </button>
           </div>

@@ -116,7 +116,7 @@ export function DcReports() {
               ? 'Machining results are only recorded from the point this module was used. Earlier production history was never captured and cannot be reconstructed.'
               : 'Widen the date range, or record the transactions this report summarises.'}
             action="Open the DC dashboard"
-            href="/dc"
+            href="/dc-dashboard"
           />
         </Card>
       ) : (

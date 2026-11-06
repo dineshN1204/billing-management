@@ -42,7 +42,7 @@ describe('the shell is shared by both modules', () => {
   })
 
   it('routes the DC entry points through that shell', () => {
-    for (const route of ['/dc', '/dc/inward', '/dc/outward', '/dc/ledger', '/dc/reports']) {
+    for (const route of ['/dc-dashboard', '/dc/inward', '/dc/outward', '/dc/ledger', '/dc/reports']) {
       expect(main, `expected ${route} to be declared`).toContain(`path="${route}"`)
     }
   })
@@ -124,5 +124,26 @@ describe('the sidebar footer cannot be pushed off screen', () => {
     // visible label and a small touch target.
     const narrow = css.slice(css.indexOf('@media (max-width: 640px)'))
     expect(narrow).toContain('.topbar-signout-label { display: inline; }')
+  })
+})
+
+describe('the add-customer route can actually open its form', () => {
+  const main = read('src/main.tsx')
+
+  it('keeps /customers/new wired to the form', () => {
+    expect(main).toContain('<Route path="/customers/new" element={<NewCustomer />} />')
+  })
+
+  it('declares the customer form lazily at module scope, never inside the route', () => {
+    // Re-creating React.lazy inside NewCustomer handed React a fresh, still
+    // pending component on every render. The route suspended indefinitely, so
+    // the address bar changed to /customers/new while the Customers list - the
+    // previous screen - stayed on display and no form ever appeared.
+    const start = main.indexOf('function NewCustomer')
+    expect(start, 'NewCustomer is missing from main.tsx').toBeGreaterThanOrEqual(0)
+    const body = main.slice(start, main.indexOf('\n}', start))
+    expect(body).not.toContain('lazy(')
+    expect(body).toContain('<CustomerForm')
+    expect(main).toMatch(/const CustomerForm = lazy\(\(\) => import\('\.\/components\/CustomerForm'\)/)
   })
 })

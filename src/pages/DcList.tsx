@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Download, Plus } from 'lucide-react'
+import { Download, Filter, Plus } from 'lucide-react'
 import { Button, Card, EmptyState, JobStatus, Loading, PageTitle, Pagination, Status } from '../components/ui'
 import { useAuth } from '../lib/auth'
 import { dcApi, type DcListRow } from '../lib/dc-api'
@@ -56,6 +56,7 @@ export function DcList({ dcType, title, eyebrow }: { dcType: DcType; title: stri
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [filterOpen, setFilterOpen] = useState(false)
 
   useEffect(() => { setPage(1) }, [search, status, jobStatus, from, to])
 
@@ -122,27 +123,45 @@ export function DcList({ dcType, title, eyebrow }: { dcType: DcType; title: stri
         }
       />
       <Card>
-        <div className="table-toolbar">
-          <input
-            aria-label={`Search ${title}`}
-            placeholder="Search customer DC, our DC, party, part or GSTIN..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-          <select aria-label="Status" value={status} onChange={e => setStatus(e.target.value)}>
-            <option value="">All statuses</option>
-            {(dcType === 'inward' ? RECEIPT_STATUSES : MOVEMENT_STATUSES).map(option => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-          {dcType === 'inward' && (
-            <select aria-label="Job status" value={jobStatus} onChange={e => setJobStatus(e.target.value)}>
-              <option value="">All job statuses</option>
-              {JOB_STATUSES.map(value => <option key={value} value={value}>{JOB_STATUS_LABEL[value]}</option>)}
+        <div className="table-toolbar dc-list-toolbar">
+          <div className="dc-list-search-row">
+            <input
+              aria-label={`Search ${title}`}
+              placeholder="Search customer DC, our DC, party, part or GSTIN..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+            {/* Below 1280px the five filter controls do not fit on one line, so
+                they move behind this button and leave the register above the
+                fold. On a wide screen the button is hidden and the filters sit
+                inline exactly as before. */}
+            <button
+              type="button"
+              className={`dc-list-filter-toggle ${filterOpen ? 'active' : ''}`}
+              aria-label={filterOpen ? 'Hide filters' : 'Show filters'}
+              aria-expanded={filterOpen}
+              aria-controls="dc-list-filters"
+              onClick={() => setFilterOpen(open => !open)}
+            >
+              <Filter size={17} />
+            </button>
+          </div>
+          <div id="dc-list-filters" className={`dc-list-filters ${filterOpen ? 'open' : ''}`}>
+            <select aria-label="DC status" value={status} onChange={e => setStatus(e.target.value)}>
+              <option value="">All DC statuses</option>
+              {(dcType === 'inward' ? RECEIPT_STATUSES : MOVEMENT_STATUSES).map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
             </select>
-          )}
-          <label className="inline-control">From <input type="date" value={from} onChange={e => setFrom(e.target.value)} /></label>
-          <label className="inline-control">To <input type="date" value={to} onChange={e => setTo(e.target.value)} /></label>
+            {dcType === 'inward' && (
+              <select aria-label="Job status" value={jobStatus} onChange={e => setJobStatus(e.target.value)}>
+                <option value="">All job statuses</option>
+                {JOB_STATUSES.map(value => <option key={value} value={value}>{JOB_STATUS_LABEL[value]}</option>)}
+              </select>
+            )}
+            <label className="inline-control">From <input type="date" value={from} onChange={e => setFrom(e.target.value)} /></label>
+            <label className="inline-control">To <input type="date" value={to} onChange={e => setTo(e.target.value)} /></label>
+          </div>
         </div>
         {error && <p role="alert" className="error-box">{error}</p>}
         {loading ? <Loading label="Loading challans..." /> : rows.length === 0 ? (
@@ -162,7 +181,7 @@ export function DcList({ dcType, title, eyebrow }: { dcType: DcType; title: stri
                     {dcType === 'outward_customer' && <th>Answers inward</th>}
                     <th className="num">Lines</th><th className="num">Quantity</th>
 
-                    <th>Status</th>
+                    <th>DC status</th>
                     {dcType === 'inward' && <th>Job status</th>}
                   </tr>
                 </thead>
@@ -259,7 +278,7 @@ export function AllChallans() {
         ) : (
           <div className="table-scroll">
             <table>
-              <thead><tr><th>DC number</th><th>Type</th><th>Date</th><th>Party</th><th className="num">Quantity</th><th>Status</th><th>Job status</th></tr></thead>
+              <thead><tr><th>DC number</th><th>Type</th><th>Date</th><th>Party</th><th className="num">Quantity</th><th>DC status</th><th>Job status</th></tr></thead>
               <tbody>
                 {filtered.slice(0, 200).map(row => {
                   return (

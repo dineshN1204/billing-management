@@ -168,7 +168,7 @@ export function DcRejections() {
 
   return (
     <>
-      <Link className="back-link" to="/dc"><ArrowLeft size={16} /> DC dashboard</Link>
+      <Link className="back-link" to="/dc-dashboard"><ArrowLeft size={16} /> DC dashboard</Link>
       <PageTitle
         eyebrow="QUALITY"
         title="Rejection Management"

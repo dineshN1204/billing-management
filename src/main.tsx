@@ -1,4 +1,4 @@
-import { StrictMode, Suspense, lazy, useState } from 'react'
+import { StrictMode, Suspense, lazy, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './lib/auth'
@@ -52,12 +52,28 @@ const DcRejections = lazy(() => import('./pages/DcOperations').then(m => ({ defa
 const DcLedger = lazy(() => import('./pages/DcLedger').then(m => ({ default: m.DcLedger })))
 const DcReports = lazy(() => import('./pages/DcReports').then(m => ({ default: m.DcReports })))
 const DcSettingsPage = lazy(() => import('./pages/DcReports').then(m => ({ default: m.DcSettingsPage })))
+const CustomerForm = lazy(() => import('./components/CustomerForm').then(m => ({ default: m.CustomerForm })))
 
+/**
+ * `/customers/new` opens the same dialog the list used to open in place.
+ *
+ * The lazy import is declared at module scope on purpose: re-creating it inside
+ * this component gave every render a fresh, still-pending component, so the
+ * route suspended indefinitely and the previous screen stayed on display even
+ * though the URL had already changed.
+ */
 function NewCustomer() {
   const navigate = useNavigate()
-  const [open, setOpen] = useState(true)
-  const CustomerForm = lazy(() => import('./components/CustomerForm').then(m => ({ default: m.CustomerForm })))
-  return <>{open && <CustomerForm onClose={() => { setOpen(false); navigate('/customers') }} onSaved={customer => navigate(`/customers/${customer.id}`)} />}</>
+  // Saving navigates to the new profile, which unmounts the dialog; its cleanup
+  // calls close(), and the dialog's own onClose event would then navigate back
+  // to the list. The flag keeps that unmount-time close from overriding onSaved.
+  const saved = useRef(false)
+  return (
+    <CustomerForm
+      onClose={() => { if (!saved.current) navigate('/customers', { replace: true }) }}
+      onSaved={customer => { saved.current = true; navigate(`/customers/${customer.id}`, { replace: true }) }}
+    />
+  )
 }
 
 /**
@@ -88,7 +104,7 @@ function AppRoutes() {
     <Route path="/signin" element={<SignIn />} />
     <Route path="/onboarding" element={<Onboarding />} />
     <Route element={<RequireSession />}>
-      <Route element={<Shell />}><Route path="/" element={<Navigate to="/dashboard" replace />} /><Route path="/dashboard" element={<Dashboard />} /><Route path="/customers" element={<Customers />} /><Route path="/customers/new" element={<NewCustomer />} /><Route path="/customers/:id" element={<CustomerDetail />} /><Route path="/products" element={<Products />} /><Route path="/products/new" element={<ProductForm />} /><Route path="/products/:id" element={<ProductDetail />} /><Route path="/products/:id/edit" element={<ProductForm />} /><Route path="/bills" element={<Bills />} /><Route path="/bills/new" element={<BillForm />} /><Route path="/bills/:id" element={<BillDetail />} /><Route path="/bills/:id/edit" element={<BillForm />} /><Route path="/scan" element={<Scan />} /><Route path="/scan/review/:id" element={<ScanReview />} /><Route path="/reports" element={<Reports />} /><Route path="/reports/outstanding" element={<Outstanding />} /><Route path="/import" element={<Import />} /><Route path="/exports" element={<Exports />} /><Route path="/audit-log" element={<AuditLog />} /><Route path="/settings" element={<Settings />} /><Route path="*" element={<EmptyState title="Page not found" description="This route is not available." action="Go to dashboard" href="/dashboard" />} /></Route>
+      <Route element={<Shell />}><Route path="/" element={<Navigate to="/dc-dashboard" replace />} /><Route path="/billing-dashboard" element={<Dashboard />} /><Route path="/customers" element={<Customers />} /><Route path="/customers/new" element={<NewCustomer />} /><Route path="/customers/:id" element={<CustomerDetail />} /><Route path="/products" element={<Products />} /><Route path="/products/new" element={<ProductForm />} /><Route path="/products/:id" element={<ProductDetail />} /><Route path="/products/:id/edit" element={<ProductForm />} /><Route path="/bills" element={<Bills />} /><Route path="/bills/new" element={<BillForm />} /><Route path="/bills/:id" element={<BillDetail />} /><Route path="/bills/:id/edit" element={<BillForm />} /><Route path="/scan" element={<Scan />} /><Route path="/scan/review/:id" element={<ScanReview />} /><Route path="/reports" element={<Reports />} /><Route path="/reports/outstanding" element={<Outstanding />} /><Route path="/import" element={<Import />} /><Route path="/exports" element={<Exports />} /><Route path="/audit-log" element={<AuditLog />} /><Route path="/settings" element={<Settings />} /><Route path="*" element={<EmptyState title="Page not found" description="This route is not available." action="Go to dashboard" href="/billing-dashboard" />} /></Route>
 
       {/*
         Delivery Challan module. It sits in the same session gate as Billing,
@@ -97,7 +113,7 @@ function AppRoutes() {
         duplicated - only /dc/ledger and /dc/rejections are DC-specific.
       */}
       <Route element={<Shell />}>
-        <Route path="/dc" element={<DcDashboard />} />
+        <Route path="/dc-dashboard" element={<DcDashboard />} />
         <Route path="/dc/inward" element={<InwardList />} />
         <Route path="/dc/inward/new" element={<DcForm dcType="inward" />} />
         <Route path="/dc/inward/:id" element={<DcDetail />} />

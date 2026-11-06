@@ -17,7 +17,7 @@ import { friendlyError } from '../lib/format'
  * no second sign-in, no separate workspace.
  */
 const BILLING_NAV = [
-  { to: '/dashboard', label: 'Overview', icon: LayoutDashboard },
+  { to: '/billing-dashboard', label: 'Overview', icon: LayoutDashboard },
   { to: '/customers', label: 'Customers', icon: Users },
   { to: '/bills', label: 'Bills', icon: FileText },
   { to: '/products', label: 'Products', icon: Package },
@@ -31,7 +31,7 @@ const BILLING_NAV = [
 ]
 
 const DC_NAV = [
-  { to: '/dc', label: 'DC dashboard', icon: LayoutDashboard },
+  { to: '/dc-dashboard', label: 'DC dashboard', icon: LayoutDashboard },
   { to: '/dc/inward', label: 'Inward DC', icon: Package },
   { to: '/dc/outward', label: 'Outward DC', icon: Truck },
   { to: '/dc/all', label: 'All challans', icon: Boxes },
@@ -86,26 +86,26 @@ export function Shell() {
         <div className="module-switch" role="group" aria-label="Module">
           <button
             type="button"
-            className={module === 'billing' ? 'active' : ''}
-            aria-pressed={module === 'billing'}
-            onClick={() => { navigate('/dashboard'); setMobile(false) }}
+            className={module === 'dc' ? 'active' : ''}
+            aria-pressed={module === 'dc'}
+            onClick={() => { navigate('/dc-dashboard'); setMobile(false) }}
           >
-            <BookOpen size={15} /> Billing
+            <Truck size={15} /> DC
           </button>
           <button
             type="button"
-            className={module === 'dc' ? 'active' : ''}
-            aria-pressed={module === 'dc'}
-            onClick={() => { navigate('/dc'); setMobile(false) }}
+            className={module === 'billing' ? 'active' : ''}
+            aria-pressed={module === 'billing'}
+            onClick={() => { navigate('/billing-dashboard'); setMobile(false) }}
           >
-            <Truck size={15} /> DC
+            <BookOpen size={15} /> Billing
           </button>
         </div>
 
         <div className="nav-caption">{module === 'dc' ? 'DELIVERY CHALLANS' : 'WORKSPACE'}</div>
         <nav aria-label="Main navigation">
           {nav.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} end={to === '/dc' || to === '/reports'} onClick={() => setMobile(false)} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <NavLink key={to} to={to} end={to === '/dc-dashboard' || to === '/reports'} onClick={() => setMobile(false)} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
               <Icon size={18} /><span>{label}</span>
             </NavLink>
           ))}

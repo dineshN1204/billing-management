@@ -42,7 +42,7 @@ export default defineConfig({
           'Billing, delivery challans and material tracking for a CNC and job-work manufacturing unit.',
         lang: 'en-IN',
         dir: 'ltr',
-        start_url: '/dashboard',
+        start_url: '/dc-dashboard',
         scope: '/',
         display: 'standalone',
         orientation: 'any',

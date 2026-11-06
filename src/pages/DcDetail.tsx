@@ -171,8 +171,8 @@ const loadToken = useRef(0)
   if (!bundle || !doc) {
     return (
       <>
-        <Link className="back-link" to="/dc"><ArrowLeft size={16} /> Delivery challans</Link>
-        <EmptyState title="Challan not found" description="It may have been removed, or it belongs to another workspace." action="Back to DC dashboard" href="/dc" />
+        <Link className="back-link" to="/dc-dashboard"><ArrowLeft size={16} /> Delivery challans</Link>
+        <EmptyState title="Challan not found" description="It may have been removed, or it belongs to another workspace." action="Back to DC dashboard" href="/dc-dashboard" />
       </>
     )
   }

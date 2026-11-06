@@ -20,7 +20,7 @@ delivery challans and material tracking for a CNC / VMC / lathe job-work unit.
 | Authorization | Row Level Security on every table; all quantity movement through `security definer` RPCs |
 | Money maths | Decimal.js in the browser, `numeric` in Postgres |
 | Quantity maths | `numeric(14,3)` in Postgres, mirrored by `src/lib/dc-quantities.ts` |
-| Modules | Billing (`/dashboard`, `/bills`, …) and Delivery Challan (`/dc`, …), sharing one session and one party master |
+| Modules | Billing (`/billing-dashboard`, `/bills`, …) and Delivery Challan (`/dc-dashboard`, `/dc/…`), sharing one session and one party master |
 
 ---
 
