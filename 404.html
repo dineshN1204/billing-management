@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Billbook · Kallazhagar Industries</title>
+</head>
+<body>
+  <script type="text/javascript">
+    // GitHub Pages SPA fallback.
+    // GitHub Pages serves this 404.html for any unknown client-side route
+    // (e.g. /dashboard, /bills, /dc/inward/123). Redirect to index.html and
+    // pass the intended route so React Router can load the right screen.
+    var path = window.location.pathname;
+    var search = window.location.search;
+    var hash = window.location.hash;
+    var cleanPath = path.startsWith('/') ? path.slice(1) : path;
+    window.location.replace(
+      '/index.html?__path=' + encodeURIComponent(cleanPath) + search + hash
+    );
+  </script>
+</body>
+</html>
