@@ -138,6 +138,7 @@ returns a 404.
 | Netlify | `public/_redirects` with `/* /index.html 200` |
 | GitHub Pages | `public/404.html` (SPA redirect shim) + `public/CNAME` (custom domain). GitHub Pages has no rewrite engine, so unknown paths hit `404.html`, which forwards to `index.html?__path=…`; `src/main.tsx` restores the route with `history.replaceState`. Deploy with `npm run deploy` (`gh-pages -d dist --dotfiles`) so `.nojekyll` ships too. **If `public/CNAME` is missing, GitHub unbinds the custom domain and the whole site returns `Site not found`.** |
 | Cloudflare Pages | `_routes.json` with a catch-all fallback to `/index.html` |
+| Apache / LiteSpeed (Hostinger) | `public/.htaccess` with `RewriteRule . /index.html [L]`, plus `no-cache` on `sw.js` and immutable caching on `/assets/*` |
 | Nginx | `try_files $uri $uri/ /index.html;` |
 
 **Required HTTP headers:**
