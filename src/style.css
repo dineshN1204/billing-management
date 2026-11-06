@@ -160,13 +160,14 @@
    instead of the table scrolling inside its card. */
 .dc-card-stack > * { min-width: 0; }
 /* The same grid-shrink rule for the other page grids whose children hold a
-   .table-scroll table (Billing outstanding, Settings, and the DC two-column
-   cards). Without it, the table's `min-width: 660px` blows the card past the
-   viewport and the page scrolls sideways — or gets clipped by the mobile
-   overflow guard — instead of the table scrolling inside its card. */
+   .table-scroll table (Billing outstanding, Settings, Scan and the DC
+   two-column cards). Without it, the table's `min-width: 660px` blows the card
+   past the viewport and the page scrolls sideways — or gets clipped by the
+   mobile overflow guard — instead of the table scrolling inside its card. */
 .outstanding-page > *,
 .settings-page > *,
-.two-column > * { min-width: 0; }
+.two-column > *,
+.scan-stack > * { min-width: 0; }
 .dc-detail + .dc-paper { margin-top: 28px; }
 
 /* The derived job status on an inward challan is rendered through <JobStatus>
@@ -597,6 +598,18 @@ td.num.strong, .strong { font-weight: 700; color: #117b6c; }
   table.stack-on-mobile td > select {
     flex: 1; min-width: 0; margin-left: 8px;
   }
+
+  /* Scan page -------------------------------------------------------------
+     The card itself is kept inside the viewport by the base `.scan-stack > *`
+     shrink rule above; here the frame tightens so the drop zone's three action
+     buttons wrap two-per-row instead of running off the right edge. */
+  .scan-card { padding: 18px; }
+  /* 22px of drop-zone padding is most of a phone's width; trimming it keeps the
+     action buttons on a two-per-row layout at 360px and gives every label room. */
+  .scan-card .capture-dropzone { padding: 16px; }
+  /* Thumb-sized targets, in the same 44px rhythm as the stacked table inputs. */
+  .scan-card .capture-actions .button,
+  .scan-card .capture-actions .upload-label { min-height: 44px; }
 
   /* Thumb-friendly height for the quantity inputs inside the stacked rows. */
   .dc-qty-input { min-height: 44px; }
