@@ -136,11 +136,11 @@ function App() {
 // above redirects here with ?__path=/original/route so React Router can load
 // the intended screen instead of landing on the homepage.
 (function () {
-  var params = new URLSearchParams(window.location.search);
-  var spaPath = params.get('__path');
+  const params = new URLSearchParams(window.location.search);
+  const spaPath = params.get('__path');
   if (spaPath) {
     params.delete('__path');
-    var qs = params.toString();
+    const qs = params.toString();
     window.history.replaceState(
       null,
       '',
