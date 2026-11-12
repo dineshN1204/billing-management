@@ -1,6 +1,5 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
 import { BillPaper } from '../components/BillPaper'
 import type { Bill, BillItem } from '../lib/types'
 

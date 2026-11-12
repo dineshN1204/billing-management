@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest'
 import { landingTarget } from '../lib/navigation'
 
 describe('landing target after signing in', () => {

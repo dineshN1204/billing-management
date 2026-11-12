@@ -121,10 +121,12 @@ export function groupRows(rows: CsvRow[]): { bills: DraftBill[]; invalid: Import
       problems.push(`HSN "${hsn}" must be 2 to 8 digits`)
     }
 
-    const paymentStatus = (row.payment_status ?? '').trim().toLowerCase()
-    if (paymentStatus !== '' && !PAYMENT_STATUSES.has(paymentStatus)) {
+    const rawPaymentStatus = (row.payment_status ?? '').trim().toLowerCase()
+    if (rawPaymentStatus !== '' && !PAYMENT_STATUSES.has(rawPaymentStatus)) {
       problems.push(`payment status "${row.payment_status}" must be unpaid, partial or paid`)
     }
+    // Stored as 'unpaid' when the sheet does not say otherwise.
+    const paymentStatus = PAYMENT_STATUSES.has(rawPaymentStatus) ? rawPaymentStatus : 'unpaid'
 
     // What has been received against the bill.
     //
@@ -185,6 +187,10 @@ export function groupRows(rows: CsvRow[]): { bills: DraftBill[]; invalid: Import
         invalid.push({ row: line, bill: billNumber, message: 'amount received differs from the earlier row for this bill' })
         continue
       }
+      if (existing.paymentStatus !== paymentStatus) {
+        invalid.push({ row: line, bill: billNumber, message: `payment status differs from the earlier row for this bill (${existing.paymentStatus})` })
+        continue
+      }
       existing.items.push(item)
     } else {
       bills.set(billNumber, {
@@ -194,7 +200,7 @@ export function groupRows(rows: CsvRow[]): { bills: DraftBill[]; invalid: Import
         customerGstin: gstin,
         customerPhone: (row.customer_phone ?? '').trim(),
         notes: (row.notes ?? '').trim(),
-        paymentStatus: PAYMENT_STATUSES.has(paymentStatus) ? paymentStatus : 'unpaid',
+        paymentStatus,
         amountReceived: paymentStatus === 'partial' ? amountReceived : null,
         items: [item],
       })

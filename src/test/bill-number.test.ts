@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest'
 import { billNumberForChallan, isSeriesNumber, numberSerial, pickNumberedChallan } from '../lib/bill-number'
 
 describe('reading a number', () => {

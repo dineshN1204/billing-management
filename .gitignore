@@ -30,6 +30,8 @@ scripts/out/
 scratch/
 
 # Diagnostic/probe output left at the project root (kept locally, not committed).
+# Playwright CLI trace/console logs captured during browser testing (generated).
+.playwright-cli/
 audit.txt
 audit*.txt
 cmp.txt

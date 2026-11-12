@@ -1,4 +1,3 @@
-import { beforeAll, describe, expect, it } from 'vitest'
 import type { TDocumentDefinitions } from 'pdfmake/interfaces'
 import { buildDcDefinition } from '../lib/dc-pdf'
 import { PDF_FONT_FAMILY, registerPdfFonts } from '../lib/pdf-fonts'
@@ -172,6 +171,38 @@ describe('Delivery Challan PDF, rendered by the real pdfmake', () => {
       dcItem({ id: `i-${index}`, line_no: index + 1, part_number: `PART-${index}` }))
     const buffer = await pdfmake.createPdf(buildDcDefinition(bundle({ items }), COMPANY)).getBuffer()
     expect(isPdf(buffer)).toBe(true)
+  })
+})
+
+describe('Delivery Challan PDF, single-page layout', () => {
+  /** Count the /Page objects (not the /Pages tree) in the rendered PDF bytes. */
+  const pageCount = async (def: TDocumentDefinitions): Promise<number> => {
+    const buffer = await pdfmake.createPdf(def).getBuffer()
+    const text = buffer.toString('latin1')
+    return (text.match(/\/Type \/Page(?![s])/g) ?? []).length
+  }
+
+  it('keeps an outward DC with delivery and machining results on one page', async () => {
+    // The delivery block sits beside the transport details rather than below
+    // them; without that the single-line document here spills onto a second
+    // page just to hold the delivery/transport blocks.
+    const outward = bundle({
+      document: dcDocument({
+        dc_type: 'outward_customer', dc_number: 'KI/OUT/2026-27/0001',
+        dispatch_at: '2026-10-01T09:30:00Z',
+        actual_delivery_at: '2026-10-01T14:00:00Z',
+        proof_of_delivery_ref: 'POD-77', receiver_name: 'Ramesh',
+      }),
+      items: [dcItem({ inspection_required: false, qty_dispatched: 440, qty_delivered: 440 })],
+      machining_results: [machiningResult({
+        source_dc_item_id: 'i-1', input_quantity: 440, accepted_output_quantity: 440, remaining_quantity: 0,
+      })],
+    })
+    expect(await pageCount(buildDcDefinition(outward, COMPANY))).toBe(1)
+  })
+
+  it('keeps an inward DC on one page', async () => {
+    expect(await pageCount(buildDcDefinition(bundle(), COMPANY))).toBe(1)
   })
 })
 

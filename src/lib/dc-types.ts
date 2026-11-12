@@ -205,7 +205,7 @@ export type DcItem = {
 
 export type DcMovement = {
   id: string
-  movement_type: 'dispatch' | 'receipt' | 'vendor_return' | 'material_return' | 'customer_delivery'
+  movement_type: 'dispatch' | 'receipt' | 'vendor_return' | 'material_return' | 'customer_delivery' | 'delivery'
   quantity: number
   unit: string
   supply_source: SupplySource

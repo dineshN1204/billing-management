@@ -8,7 +8,7 @@ import { dcApi, loadDcBundle } from '../lib/dc-api'
 import { DC_TYPE_LABEL, DISPOSITION_LABEL, type DcBundle, type DcDocument, type DcItem, type DcJobProgressRow, type DcType } from '../lib/dc-types'
 import {
   balanceInspectionOutcome, deliveryBalance, deliveryClosesChallan, deliveryPreview, INSPECTION_KEYS, inwardCompletion,
-  inspectionBalance, isNegativeQty, outcomeTotal, outwardCompletion, parseQty, pendingReturn, qty,
+  inspectionBalance, isNegativeQty, mergeMachiningRows, outcomeTotal, outwardCompletion, parseQty, pendingReturn, qty,
   quantityText, receiptSplit, type InspectionKey, type InspectionOutcome, type OutwardCompletion,
 } from '../lib/dc-quantities'
 import { displayDate, explainError, friendlyError, localDateTime, today } from '../lib/format'
@@ -1508,17 +1508,24 @@ function MachiningPanel({ bundle, busy, organizationId, onCancel, onSubmit }: Pa
   }
 
   // Loss fields are only relevant when any line carries a process loss.
-  const pendingQuantityLines = lines.filter(l => !l.covered)
+  // Lines with material left to machine need a result — whether or not they
+  // already have one (a line with remaining material can receive a
+  // continuation result). Lines with input of 0 are finished (nothing left to
+  // machine) and are not required.
+  const pendingQuantityLines = lines.filter(l => l.input > 0)
+  const missingLineNumbers = pendingQuantityLines.map(l => l.line_no).sort((a, b) => a - b)
   const anyLoss = pendingQuantityLines.some(l => parseQty(l.loss) > 0)
   const [lossReason, setLossReason] = useState('')
   const [lossApprovedBy, setLossApprovedBy] = useState('')
 
   const errorFor = (line: QuantityLine) => {
-    if (line.covered) return null
-    if (line.input <= 0) return 'No material left to machine on this line.'
+    // Lines with no material left to machine do not need a result.
+    if (line.input <= 0) return null
     if (isOver(line)) return 'Accounts for more than the input quantity.'
     if (parseQty(line.loss) > 0 && (!lossReason.trim() || !lossApprovedBy.trim()))
       return 'Process loss needs a recorded reason and an approver.'
+    const accounted = parseQty(line.accepted) + parseQty(line.rejection) + parseQty(line.rework) + parseQty(line.scrap) + parseQty(line.loss)
+    if (accounted <= 0) return 'Record a machining result for this line.'
     return null
   }
 
@@ -1548,10 +1555,11 @@ function MachiningPanel({ bundle, busy, organizationId, onCancel, onSubmit }: Pa
     <Card className="dc-panel">
       <h2>Record a machining / processing result</h2>
       <p className="muted">
-        Every job-work line on this challan needs a machining result before the batch can be saved.
-        The input is what is still to be machined on each line; finished machining, rejection, rework,
-        scrap and authorised loss are subtracted from it, and whatever is left is the remaining
-        quantity. Fill in every line below, then submit once - no line is left behind.
+        Every job-work line with material left to machine is listed below. The input is what is still to
+        be machined on each line — a line with remaining quantity from an earlier result can be recorded
+        again until nothing is left. Finished machining, rejection, rework, scrap and authorised loss are
+        subtracted from the input, and whatever is left is the remaining quantity. Fill in every pending
+        line below, then submit once — no line is left behind.
       </p>
 
       {allCovered && (
@@ -1579,9 +1587,9 @@ function MachiningPanel({ bundle, busy, organizationId, onCancel, onSubmit }: Pa
                   return (
                     <tr key={line.id}>
                       <td>
-                        {line.covered
-                          ? `Line ${line.line_no}`
-                          : <strong>Line {line.line_no}</strong>}
+                        {line.input > 0
+                          ? <strong>Line {line.line_no}</strong>
+                          : `Line ${line.line_no}`}
                         <br />
                         <span className="muted">{line.part}</span>
                       </td>
@@ -1591,7 +1599,7 @@ function MachiningPanel({ bundle, busy, organizationId, onCancel, onSubmit }: Pa
                           className="dc-qty-input"
                           value={line.accepted}
                           onChange={e => updateQuantity(index, 'accepted', e.target.value)}
-                          disabled={line.covered || busy}
+                          disabled={line.input <= 0 || busy}
                         />
                       </td>
                       <td className="num">
@@ -1599,7 +1607,7 @@ function MachiningPanel({ bundle, busy, organizationId, onCancel, onSubmit }: Pa
                           className={`dc-qty-input${err ? ' invalid' : ''}`}
                           value={line.rejection}
                           onChange={e => updateQuantity(index, 'rejection', e.target.value)}
-                          disabled={line.covered || busy}
+                          disabled={line.input <= 0 || busy}
                         />
                       </td>
                       <td className="num">
@@ -1607,7 +1615,7 @@ function MachiningPanel({ bundle, busy, organizationId, onCancel, onSubmit }: Pa
                           className="dc-qty-input"
                           value={line.rework}
                           onChange={e => updateQuantity(index, 'rework', e.target.value)}
-                          disabled={line.covered || busy}
+                          disabled={line.input <= 0 || busy}
                         />
                       </td>
                       <td className="num">
@@ -1615,7 +1623,7 @@ function MachiningPanel({ bundle, busy, organizationId, onCancel, onSubmit }: Pa
                           className="dc-qty-input"
                           value={line.scrap}
                           onChange={e => updateQuantity(index, 'scrap', e.target.value)}
-                          disabled={line.covered || busy}
+                          disabled={line.input <= 0 || busy}
                         />
                       </td>
                       <td className="num">
@@ -1623,15 +1631,17 @@ function MachiningPanel({ bundle, busy, organizationId, onCancel, onSubmit }: Pa
                           className="dc-qty-input"
                           value={line.loss}
                           onChange={e => updateQuantity(index, 'loss', e.target.value)}
-                          disabled={line.covered || busy}
+                          disabled={line.input <= 0 || busy}
                         />
                       </td>
                       <td className="num" style={{ fontWeight: 600, color: remaining > 0 ? '#117b6c' : '#78928e' }}>
                         {qty(remaining)} {line.unit}
                       </td>
                       <td className="num">
-                        {line.covered
-                          ? <Status value="covered" label="Recorded" tone="success" />
+                        {line.input <= 0
+                          ? coveredIds.has(line.id)
+                            ? <Status value="covered" label="Recorded" tone="success" />
+                            : <span className="muted">Not required</span>
                           : err
                             ? <span className="muted" style={{ color: '#a4372f', fontSize: '11px' }}>{err}</span>
                             : <span className="muted">Pending</span>}
@@ -1673,6 +1683,11 @@ function MachiningPanel({ bundle, busy, organizationId, onCancel, onSubmit }: Pa
               quantity, and any process loss needs a reason and an approver.
             </p>
           )}
+          {pendingQuantityLines.length > 0 && !hasErrors && (
+            <p className="muted">
+              Fill in every pending line above ({missingLineNumbers.join(', ')}) before recording.
+            </p>
+          )}
 
           <div className="inline-actions">
             <Button
@@ -1711,7 +1726,7 @@ function MachiningPanel({ bundle, busy, organizationId, onCancel, onSubmit }: Pa
           </div>
 
           <p className="muted">
-            {pendingQuantityLines.length} of {jobLines.length} job-work line{jobLines.length === 1 ? '' : 's'} still need a result.
+            Still need machining results for line{missingLineNumbers.length > 1 ? 's' : ''} {missingLineNumbers.join(', ')}.
           </p>
         </>
       )}
@@ -1824,24 +1839,23 @@ function MachiningResults({ bundle }: { bundle: DcBundle }) {
       <div className="table-scroll">
         <table>
           <thead>
-            <tr><th>Line</th><th>Date</th><th>Part</th><th>Operation</th><th className="num">Input</th><th className="num">Finished machining</th>
+            <tr><th>Line</th><th>Part</th><th>Operation</th><th className="num">Input</th><th className="num">Finished machining</th>
               <th className="num">Rejection</th><th className="num">Rework</th><th className="num">Scrap</th>
               <th className="num">Loss</th><th className="num">Remaining</th></tr>
           </thead>
           <tbody>
-            {bundle.machining_results.map(result => (
-              <tr key={result.id}>
-                <td className="mono">{lineByItemId.get(result.source_dc_item_id ?? '') ?? '—'}</td>
-                <td>{displayDate(result.operation_date)}</td>
-                <td className="table-primary">{result.part_number}</td>
-                <td>{result.operation}</td>
-                <td className="num">{qty(result.input_quantity)} {result.input_unit}</td>
-                <td className="num">{qty(result.accepted_output_quantity)} {result.output_unit}</td>
-                <td className="num">{qty(result.machining_rejection_quantity)}</td>
-                <td className="num">{qty(result.rework_quantity)}</td>
-                <td className="num">{qty(result.scrap_quantity)}</td>
-                <td className="num">{qty(result.process_loss_quantity)}</td>
-                <td className="num">{qty(result.remaining_quantity)}</td>
+            {mergeMachiningRows(bundle.machining_results, id => lineByItemId.get(id ?? '')).map((row, index) => (
+              <tr key={`${row.sourceDcItemId ?? row.partNumber}-${index}`}>
+                <td className="mono">{row.lineNo ?? '—'}</td>
+                <td>{row.partNumber}</td>
+                <td>{row.operation}</td>
+                <td className="num">{qty(row.quantity)} {row.inputUnit}</td>
+                <td className="num">{qty(row.finished)} {row.outputUnit}</td>
+                <td className="num">{qty(row.rejection)}</td>
+                <td className="num">{qty(row.rework)}</td>
+                <td className="num">{qty(row.scrap)}</td>
+                <td className="num">{qty(row.loss)}</td>
+                <td className="num">{qty(row.remaining)}</td>
               </tr>
             ))}
           </tbody>

@@ -14,7 +14,7 @@ type Row = ReportRow
 type ReportKey =
   | 'inward-register' | 'pending-inspection' | 'material-acceptance' | 'material-rejection'
   | 'shortage-excess' | 'outward-register' | 'pending-delivery'
-  | 'machining-rejection' | 'acceptance-rate' | 'rejection-trend' | 'material-balance'
+  | 'machining-rejection' | 'acceptance-rate' | 'rejection-trend'
 
 const REPORTS: Array<{ key: ReportKey; label: string; description: string; dateFilter: boolean }> = [
   { key: 'inward-register', label: 'Inward DC register', description: 'Every inward challan with quantities.', dateFilter: true },
@@ -27,8 +27,8 @@ const REPORTS: Array<{ key: ReportKey; label: string; description: string; dateF
   { key: 'machining-rejection', label: 'Machining rejection report', description: 'Components rejected during processing, with rework and scrap.', dateFilter: true },
   { key: 'acceptance-rate', label: 'Part-wise acceptance rate', description: 'Accepted share of inspected quantity, per part.', dateFilter: true },
   { key: 'rejection-trend', label: 'Rejection trend by month', description: 'Material and machining rejection over time.', dateFilter: false },
-  { key: 'material-balance', label: 'Material reconciliation', description: 'Received against accepted, processed and dispatched.', dateFilter: true },
 ]
+
 
 /**
  * Reports read the same source rows as the rest of the module. Where a report
@@ -67,7 +67,6 @@ export function DcReports() {
           case 'pending-delivery': data = (await dcApi.pendingCustomerDelivery(organization.id)) as Row[]; break
           case 'machining-rejection': data = (await dcApi.machiningRejections(organization.id, from || undefined, to || undefined)) as Row[]; break
           case 'rejection-trend': data = (await dcApi.rejectionTrend(organization.id)) as Row[]; break
-          case 'material-balance': data = (await dcApi.acceptanceRate(organization.id, from || undefined, to || undefined)) as Row[]; break
         }
         if (!active) return
         setRows(data)

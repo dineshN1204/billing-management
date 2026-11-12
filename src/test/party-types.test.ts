@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { DcType } from '../lib/dc-types'
 import type { PartyType } from '../lib/types'
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+const read = (relative: string) => readFileSync(join(root, relative), 'utf8')
 
 /**
  * Billing and Delivery Challans share one party master, so a party added under
@@ -18,14 +23,13 @@ const PARTY_TYPES: Record<DcType, PartyType[]> = {
   material_return: ['customer', 'supplier', 'vendor', 'other'],
 }
 
-const DEFAULT_PARTY_TYPE: PartyType = 'customer'
-
 describe('One party master, shared by Billing and Delivery Challans', () => {
   it('classifies a party created in Billing as a customer by default', () => {
     // db/migrations/0013 adds party_type NOT NULL DEFAULT 'customer', and
     // CustomerForm still defaults the dropdown to it. A party therefore needs
     // no migration, import or sync step to appear in the DC module.
-    expect(DEFAULT_PARTY_TYPE).toBe('customer')
+    expect(read('db/migrations/0013_dc_parties_orders_settings.sql')).toContain("default 'customer'")
+    expect(read('src/components/CustomerForm.tsx')).toContain("party_type: 'customer'")
   })
 
   it('offers an ordinary customer everywhere a DC is received from or delivered to', () => {

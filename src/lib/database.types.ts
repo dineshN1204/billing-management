@@ -78,7 +78,7 @@ export type Database = {
       }
       set_customer_verification: { Args: { target_customer_id: string; new_status: string }; Returns: Customer }
       dashboard_summary: { Args: { org_id: string }; Returns: { total_customers: number; total_bills: number; total_sales: number; current_fy_sales: number; pending_amount: number; bills_this_month: number } }
-      customer_summary: { Args: { target_customer_id: string }; Returns: { bill_count: number; total_purchase: number; total_gst: number; average_bill: number; last_bill: string | null } }
+      customer_summary: { Args: { target_customer_id: string }; Returns: { bill_count: number; total_purchase: number; total_paid: number; pending_amount: number; total_gst: number; average_bill: number; last_bill: string | null } }
       customer_products: { Args: { target_customer_id: string }; Returns: Array<{ product_name: string; quantity: number; total_amount: number; last_purchased: string }> }
       report_summary: { Args: { org_id: string; start_date: string; end_date: string }; Returns: { taxable: number; cgst: number; sgst: number; igst: number; total_gst: number; cess: number; sales: number; bills: number; pending: number } }
     }

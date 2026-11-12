@@ -15,7 +15,7 @@
 import type { Column, Content, ContentText, TableCell, TDocumentDefinitions } from 'pdfmake/interfaces'
 import { DC_TYPE_TITLE, type DcBundle, type DcItem, type DcMachiningResult } from './dc-types'
 import { displayDate } from './format'
-import { qty } from './dc-quantities'
+import { mergeMachiningRows, qty } from './dc-quantities'
 import { PDF_FONT_FAMILY, registerPdfFonts } from './pdf-fonts'
 
 type Company = {
@@ -195,7 +195,7 @@ function inspectionRows(items: DcItem[]): TableCell[] {
  * state a conversion that never happened. Rejection, rework, scrap and loss are
  * input-unit quantities, which is how the on-screen table already reads them.
  */
-function machiningRows(results: DcMachiningResult[]): TableCell[] {
+function machiningRows(results: DcMachiningResult[], lineNoOf?: (itemId: string | null) => number | null | undefined): TableCell[] {
   const rows: TableCell[] = [
     [
       head('Line'),
@@ -211,18 +211,18 @@ function machiningRows(results: DcMachiningResult[]): TableCell[] {
     ],
   ]
 
-  for (const result of results) {
+  for (const row of mergeMachiningRows(results, lineNoOf)) {
     rows.push([
-      plain('—'),
-      plain(result.part_number),
-      plain(result.operation),
-      cell(`${qty(result.input_quantity)} ${result.input_unit}`),
-      cell(`${qty(result.accepted_output_quantity)} ${result.output_unit}`),
-      cell(qty(result.machining_rejection_quantity)),
-      cell(qty(result.rework_quantity)),
-      cell(qty(result.scrap_quantity)),
-      cell(qty(result.process_loss_quantity)),
-      cell(qty(result.remaining_quantity)),
+      plain(row.lineNo == null ? '—' : String(row.lineNo)),
+      plain(row.partNumber),
+      plain(row.operation),
+      cell(`${qty(row.quantity)} ${row.inputUnit}`),
+      cell(`${qty(row.finished)} ${row.outputUnit}`),
+      cell(qty(row.rejection)),
+      cell(qty(row.rework)),
+      cell(qty(row.scrap)),
+      cell(qty(row.loss)),
+      cell(qty(row.remaining)),
     ])
   }
   return rows
@@ -438,7 +438,8 @@ export function buildDcDefinition(bundle: DcBundle, company: Company): TDocument
         // only ever hold a number and the Line column only a dash, so they
         // give up the width. Sizing Operation as an average column wrapped
         // every operation onto two lines.
-        table(share(0.45, 1.05, 1.2, 1.0, 0.95, 0.85, 0.75, 0.75, 0.75, 0.85), machiningRows(bundle.machining_results)),
+        table(share(0.45, 1.05, 1.2, 1.0, 0.95, 0.85, 0.75, 0.75, 0.75, 0.85),
+          machiningRows(bundle.machining_results, itemId => bundle.items.find(i => i.id === itemId)?.line_no)),
       ],
     }
     : ''
@@ -467,10 +468,12 @@ export function buildDcDefinition(bundle: DcBundle, company: Company): TDocument
     ],
   }
 
-  const delivery: Content | null =
+  // The delivery block sits to the right of the transport details rather than
+  // below them (its own row), so a challan does not grow a second page just to
+  // carry it.
+  const deliveryBody: Content | null =
     d.dc_type === 'outward_customer' && (d.proof_of_delivery_ref || d.receiver_name || d.actual_delivery_at)
       ? {
-        margin: [0, 10, 0, 0],
         stack: [
           { text: 'DELIVERY', style: 'label', margin: [0, 0, 0, 4] },
           {
@@ -537,8 +540,19 @@ export function buildDcDefinition(bundle: DcBundle, company: Company): TDocument
       ),
       inspection,
       machining,
-      { margin: [0, 10, 0, 0], stack: [{ text: 'TRANSPORT DETAILS', style: 'label', margin: [0, 0, 0, 4] }, transportBlock(bundle)] },
-      ...(delivery ? [delivery] : []),
+      {
+        margin: [0, 10, 0, 0],
+        columns: [
+          {
+            width: deliveryBody ? '50%' : '*',
+            stack: [
+              { text: 'TRANSPORT DETAILS', style: 'label', margin: [0, 0, 0, 4] },
+              transportBlock(bundle),
+            ],
+          },
+          ...(deliveryBody ? [{ width: '50%', stack: [deliveryBody] }] : []),
+        ],
+      },
       { margin: [0, 10, 0, 0], stack: remarks },
     ],
     /* The signature belongs on the document, so the footer draws it on the last

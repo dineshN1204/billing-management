@@ -47,7 +47,7 @@ export function Bills() {
       if (cancelled) query = query.not('deleted_at', 'is', null)
       else query = query.is('deleted_at', null)
       if (trimmed) {
-        const escaped = trimmed.replace(/[\\%_]/g, '\\$&')
+        const escaped = trimmed.replace(/[\\%_"]/g, '\\$&')
         // A customer DC number identifies a bill only through the challans it
         // pays for, so the term is matched against the bill number OR against
         // the ids of bills reached that way. Without the second half, typing the
@@ -61,9 +61,15 @@ export function Bills() {
           dcApi.billsForCustomerDc(organization.id, trimmed).catch(() => []),
           dcApi.billsForDcNumber(organization.id, trimmed).catch(() => []),
         ])
+        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+        // Only database-returned UUIDs are safe to interpolate into the filter
+        // grammar; anything else could reshape the OR clause. The ilike literal
+        // is double-quoted so user text with commas, quotes or spaces cannot
+        // break the PostgREST filter parsing.
         const ids = [...new Set([...byCustomerDc, ...byOurDc].map(match => match.bill_id))]
+          .filter(id => UUID_RE.test(id))
         query = ids.length
-          ? query.or(`bill_number.ilike.%${escaped}%,id.in.(${ids.join(',')})`)
+          ? query.or(`bill_number.ilike."%${escaped}%",id.in.(${ids.join(',')})`)
           : query.ilike('bill_number', `%${escaped}%`)
       }
       if (status) query = query.eq('payment_status', status as Bill['payment_status'])

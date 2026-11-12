@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest'
 import { captureFileName, CAPTURE_MAX_EDGE, MAX_DOCUMENT_BYTES, planCaptureAttempts } from '../lib/image'
 
 describe('capture encoding plan', () => {

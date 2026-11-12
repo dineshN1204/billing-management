@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest'
 import { amountInWords, rupeesInWords } from '../lib/amount-in-words'
 
 describe('the amount on an invoice, in words', () => {

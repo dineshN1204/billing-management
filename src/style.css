@@ -78,6 +78,46 @@
 }
 .field-grid:first-child { margin-top: 0; }
 
+/* Outward DC creation form grids - responsive columns.
+   Mobile: 2 columns | Tablet (>=640px): 3 columns | Desktop (>=1024px): 5 columns.
+   Scoped to .dc-form .field-grid so shared filter toolbars elsewhere are untouched. */
+.dc-form .field-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (min-width: 640px) {
+  .dc-form .field-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1024px) {
+  .dc-form .field-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+/* Scroll isolation: horizontal overflow scrolls inside the field grid only, so
+   the section headings ("DC information", "Customer", "Mode of transport") stay
+   fixed and do not drift sideways with the content. */
+.dc-form .field-grid {
+  overflow-x: auto;
+  min-width: 0;
+}
+.dc-form .field-grid > * {
+  min-width: 0;
+}
+.dc-form input,
+.dc-form select,
+.dc-form textarea {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.dc-form > .card {
+  overflow-x: hidden;
+}
+.content {
+  overflow-x: clip;
+}
+
 .dc-form { display: grid; gap: 18px; }
 .dc-form .card h2 { margin-bottom: 14px; }
 .dc-form .detail-list { margin: 12px 0 0; }
@@ -121,7 +161,7 @@
 .dc-product-matches small { display: block; color: #78928e; }
 
 /* Party picker ----------------------------------------------------------- */
-.dc-picker { position: relative; display: block; }
+.dc-picker { position: relative; display: block; overflow: visible; }
 .dc-picker > span { display: block; font-size: 11px; font-weight: 600; margin-bottom: 5px; color: #4a5f6a; }
 .dc-picker-input { position: relative; display: flex; align-items: center; }
 .dc-picker-input svg { position: absolute; left: 11px; color: #78928e; pointer-events: none; }
@@ -287,7 +327,8 @@ td.num.strong, .strong { font-weight: 700; color: #117b6c; }
 .dc-party { background: #f2f6f5; padding: 12px 16px; margin: 12px 0; border-radius: 3px; }
 .dc-party strong { font-size: 16px; display: block; margin: 3px 0; }
 .dc-label { font-size: 10.67px; letter-spacing: 0.12em; text-transform: uppercase; color: #78928e; font-weight: 700; display: block; }
-.dc-references, .dc-transport { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 10px 0; }
+.dc-references { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 10px 0; }
+.dc-transport-delivery { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 10px 0; }
 .dc-references dl, .dc-transport dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; }
 .dc-references dt, .dc-transport dt { font-size: 10.67px; color: #78928e; text-transform: uppercase; letter-spacing: 0.06em; }
 .dc-references dd, .dc-transport dd { margin: 0; font-size: 12px; }
@@ -301,7 +342,8 @@ td.num.strong, .strong { font-weight: 700; color: #117b6c; }
 .dc-items small { display: block; font-size: 9.33px; color: #78928e; }
 .dc-items.compact th, .dc-items.compact td { padding: 3px 6px; }
 .dc-inspection-summary, .dc-machining-summary { margin-top: 12px; }
-.dc-transport { border-top: 1px solid #eef2f2; padding-top: 8px; }
+.dc-transport { margin: 10px 0; border-top: 1px solid #eef2f2; padding-top: 8px; }
+.dc-transport-delivery .dc-transport { margin: 0; }
 .dc-remarks { margin-top: 10px; }
 .dc-remarks p { margin: 3px 0 0; }
 .dc-signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: auto; padding-top: 36px; break-inside: avoid; }
@@ -330,11 +372,21 @@ td.num.strong, .strong { font-weight: 700; color: #117b6c; }
      one line's cells together, so the printed table is still scannable. */
   .dc-items thead { display: table-header-group; }
   .dc-items tbody tr { break-inside: avoid; }
+  /* The preview and the printed page are the same component, so the only way
+     they can differ is the responsive breakpoint below: a print-dialog zoom
+     that shrinks the effective page width under 780px fires the mobile rules
+     and stacks the side-by-side columns, re-pads the paper and re-flows the
+     letterhead. Lock the desktop/print layout so the printed challan matches
+     the preview at any zoom. */
+  .dc-transport-delivery, .dc-references { grid-template-columns: 1fr 1fr !important; }
+  .dc-paper { padding: 15mm !important; }
+  .dc-paper-head { flex-direction: row !important; align-items: stretch !important; gap: 20px !important; }
+  .dc-paper-title { text-align: right !important; }
   @page { size: A4; margin: 0; }
 }
 
 @media (max-width: 780px) {
-  .dc-references, .dc-transport { grid-template-columns: 1fr; }
+  .dc-references, .dc-transport-delivery { grid-template-columns: 1fr; }
   .dc-paper { padding: 12mm 8mm; }
   .dc-return-row { grid-template-columns: 1fr; }
   /* On narrow screens the letterhead stacks: company details above the
@@ -426,6 +478,12 @@ td.num.strong, .strong { font-weight: 700; color: #117b6c; }
   padding: 3px 7px;
   display: inline-block;
 }
+
+/* Customer profile money tiles: paid reads positive (green), pending reads
+   negative (red). Applied to the summary stat cards in Customers.tsx so the
+   gap between the two figures is legible at a glance. */
+.stat strong.stat-paid { color: #146e52; }
+.stat strong.stat-pending { color: #a4372f; }
 
 /* ==========================================================================
    Tax invoice, as a document.

@@ -1,5 +1,4 @@
-import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -34,8 +33,11 @@ describe('pwa update flow', () => {
     expect(pwa).not.toContain('cachedRegister.updateServiceWorker')
   })
 
-  it('the generated service worker enables clientsClaim', () => {
-    const sw = read('dist/sw.js')
-    expect(sw).toContain('clientsClaim')
-  })
+  it.skipIf(!existsSync(join(root, 'dist', 'sw.js')))(
+    'the generated service worker enables clientsClaim',
+    () => {
+      const sw = read('dist/sw.js')
+      expect(sw).toContain('clientsClaim')
+    },
+  )
 })

@@ -16,7 +16,7 @@
  * correct outcome if that ever becomes possible.
  */
 
-import { readFileSync, existsSync, statSync } from 'node:fs'
+import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -43,7 +43,8 @@ if (!existsSync(dist)) {
 
 const swPath = join(dist, 'sw.js')
 check(existsSync(swPath), 'sw.js was not generated. The app will not be installable.')
-check(existsSync(join(dist, 'workbox-*.js'.replace('*.js', ''))) || readFileSafe(swPath).includes('workbox'), 'workbox runtime missing from the build.')
+const hasWorkboxRuntime = readdirSync(dist).some(name => name.startsWith('workbox-') && name.endsWith('.js'))
+check(hasWorkboxRuntime || readFileSafe(swPath).includes('workbox'), 'workbox runtime missing from the build.')
 
 if (existsSync(swPath)) {
   const sw = read('sw.js')

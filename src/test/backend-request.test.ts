@@ -1,4 +1,3 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 /** Hoisted so the mock factory below can reference it before the import. */
 const getSessionMock = vi.hoisted(() => vi.fn())

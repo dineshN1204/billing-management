@@ -1,4 +1,3 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest'
 import type { TDocumentDefinitions } from 'pdfmake/interfaces'
 import { buildBillDefinition } from '../lib/bill-pdf'
 import { PDF_FONT_FAMILY, registerPdfFonts } from '../lib/pdf-fonts'

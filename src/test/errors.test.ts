@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest'
 import {
   describeError, explainError, friendlyError, isAlreadyBootstrapped,
   isAuthOriginRejected, isSessionRejected, needsEmailConfirmation,

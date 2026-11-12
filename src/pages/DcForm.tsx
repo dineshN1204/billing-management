@@ -620,12 +620,6 @@ export function DcForm({ dcType }: { dcType: DcType }) {
             label="Party"
             hint="Details are taken from the customer record and frozen on this challan when it is finalized."
           />
-          {party && (
-            <dl className="detail-list">
-              <dt>GSTIN</dt><dd className="mono">{party.gstin || 'Not recorded'}</dd>
-              <dt>Type</dt><dd>{party.party_type}</dd>
-            </dl>
-          )}
         </Card>
 
         <Card>

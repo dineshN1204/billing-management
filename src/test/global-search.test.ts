@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest'
 import { firstSearchTarget, rankDcs, type DcHit } from '../lib/global-search'
 import type { DcType } from '../lib/dc-types'
 

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import type { DcBundle, DcItem } from '../lib/dc-types'
 import { DC_TYPE_TITLE } from '../lib/dc-types'
 import { displayDate } from '../lib/format'
-import { qty } from '../lib/dc-quantities'
+import { mergeMachiningRows, qty } from '../lib/dc-quantities'
 
 type Company = { name: string; gstin?: string | null; address?: string | null; phone?: string | null; email?: string | null }
 
@@ -70,6 +70,34 @@ export function DcPaper({ bundle, company }: { bundle: DcBundle; company: Compan
         ? [d.external_dc_number ?? '']
         : []),
     ].filter(value => value.trim() !== ''))].sort((a, b) => a.localeCompare(b))
+
+  // Transport details run full-width on their own (inward challans have no
+  // delivery block). When a delivery block exists, the two sit side by side so
+  // the document does not grow a second page just to hold it.
+  const transportSection = (
+    <section className="dc-transport">
+      {label('TRANSPORT DETAILS')}
+      <dl>
+        <dt>Mode</dt><dd>{val(d.mode_of_transport)}</dd>
+        <dt>Transporter</dt><dd>{val(d.transporter_name)}</dd>
+        <dt>Vehicle</dt><dd>{val(d.vehicle_number)}</dd>
+        <dt>LR / docket</dt><dd>{valNode(d.lr_number, val(d.docket_number))}</dd>
+        <dt>E-way bill</dt><dd>{val(d.eway_bill_number)}</dd>
+      </dl>
+    </section>
+  )
+
+  const deliverySection = hasDelivery ? (
+    <section className="dc-transport">
+      {label('DELIVERY')}
+      <dl>
+        <dt>Dispatched at</dt><dd>{d.dispatch_at ? new Date(d.dispatch_at).toLocaleString('en-IN') : '—'}</dd>
+        <dt>Delivered at</dt><dd>{d.actual_delivery_at ? new Date(d.actual_delivery_at).toLocaleString('en-IN') : '—'}</dd>
+        <dt>Proof of delivery</dt><dd>{val(d.proof_of_delivery_ref)}</dd>
+        <dt>Received by</dt><dd>{val(d.receiver_name)}</dd>
+      </dl>
+    </section>
+  ) : null
 
   return (
     <div className="dc-paper">
@@ -202,24 +230,24 @@ export function DcPaper({ bundle, company }: { bundle: DcBundle; company: Compan
               </tr>
             </thead>
             <tbody>
-              {bundle.machining_results.map(result => (
-                <tr key={result.id}>
-                <td className="mono">{bundle.items?.find(i => i.id === result.source_dc_item_id)?.line_no ?? '—'}</td>
-                  <td>{result.part_number}</td>
-                  <td>{result.operation}</td>
+              {mergeMachiningRows(bundle.machining_results, id => bundle.items?.find(i => i.id === id)?.line_no).map((row, index) => (
+                <tr key={`${row.sourceDcItemId ?? row.partNumber}-${index}`}>
+                <td className="mono">{row.lineNo ?? '—'}</td>
+                  <td>{row.partNumber}</td>
+                  <td>{row.operation}</td>
                   {/* The unit rides with the quantity: input and output units can
                       differ on a conversion, and rejection, rework, scrap and loss
                       are all input-unit quantities. */}
-                  <td className="num">{qty(result.input_quantity)} {result.input_unit}</td>
-                  <td className="num">{qty(result.accepted_output_quantity)} {result.output_unit}</td>
-                  <td className="num">{qty(result.machining_rejection_quantity)}</td>
-                  <td className="num">{qty(result.rework_quantity)}</td>
-                  <td className="num">{qty(result.scrap_quantity)}</td>
-                  <td className="num">{qty(result.process_loss_quantity)}</td>
-                  {/* What had not been machined when the record was made. It is
-                      the material still with the customer, and it is why the
-                      record did not add up to the whole input. */}
-                  <td className="num">{qty(result.remaining_quantity)}</td>
+                  <td className="num">{qty(row.quantity)} {row.inputUnit}</td>
+                  <td className="num">{qty(row.finished)} {row.outputUnit}</td>
+                  <td className="num">{qty(row.rejection)}</td>
+                  <td className="num">{qty(row.rework)}</td>
+                  <td className="num">{qty(row.scrap)}</td>
+                  <td className="num">{qty(row.loss)}</td>
+                  {/* What is still unmachined after every batch on this line. It
+                      is the material still with the customer, and it is why the
+                      line's total does not yet equal what was finished. */}
+                  <td className="num">{qty(row.remaining)}</td>
                 </tr>
               ))}
             </tbody>
@@ -227,28 +255,9 @@ export function DcPaper({ bundle, company }: { bundle: DcBundle; company: Compan
         </section>
       )}
 
-      <section className="dc-transport">
-        {label('TRANSPORT DETAILS')}
-        <dl>
-          <dt>Mode</dt><dd>{val(d.mode_of_transport)}</dd>
-          <dt>Transporter</dt><dd>{val(d.transporter_name)}</dd>
-          <dt>Vehicle</dt><dd>{val(d.vehicle_number)}</dd>
-          <dt>LR / docket</dt><dd>{valNode(d.lr_number, val(d.docket_number))}</dd>
-          <dt>E-way bill</dt><dd>{val(d.eway_bill_number)}</dd>
-        </dl>
-      </section>
-
-      {hasDelivery && (
-        <section className="dc-transport">
-          {label('DELIVERY')}
-          <dl>
-            <dt>Dispatched at</dt><dd>{d.dispatch_at ? new Date(d.dispatch_at).toLocaleString('en-IN') : '—'}</dd>
-            <dt>Delivered at</dt><dd>{d.actual_delivery_at ? new Date(d.actual_delivery_at).toLocaleString('en-IN') : '—'}</dd>
-            <dt>Proof of delivery</dt><dd>{val(d.proof_of_delivery_ref)}</dd>
-            <dt>Received by</dt><dd>{val(d.receiver_name)}</dd>
-          </dl>
-        </section>
-      )}
+      {hasDelivery ? (
+        <div className="dc-transport-delivery">{transportSection}{deliverySection}</div>
+      ) : transportSection}
 
       {(d.remarks || d.unloading_remarks || d.cancel_reason) && (
         <section className="dc-remarks">

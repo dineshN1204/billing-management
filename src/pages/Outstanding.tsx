@@ -80,7 +80,7 @@ export function Outstanding() {
             <div className="outstanding-summary">
               <div><span>Bills in view</span><strong>{count}</strong></div>
               <div><span>Outstanding in view</span><strong>{money(pageTotal)}</strong></div>
-              <div><span>Oldest bill</span><strong>{displayDate(rows[rows.length - 1]?.bill_date ?? '')}</strong></div>
+              <div><span>Oldest in view</span><strong>{displayDate(rows[rows.length - 1]?.bill_date ?? '')}</strong></div>
             </div>
             <div className="table-scroll">
               <table>

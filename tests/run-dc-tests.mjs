@@ -868,6 +868,211 @@ await test('12d. accepts a unit-converting process without forcing the universal
 })
 
 // ---------------------------------------------------------------------------
+// 12e-12f. The batch completeness gate (record_machining_batch)
+//
+// The reported bug: the form showed a line as "Not required" once its inward
+// source had no material left to machine, submitted only the lines that still
+// had material, and the database refused with INCOMPLETE_BATCH because it
+// counted every linked outward line as required. Migration 0055 aligns the
+// gate with the material actually left to machine.
+// ---------------------------------------------------------------------------
+
+const machiningBatch = payload => rpc('record_machining_batch', payload)
+
+// A linked line with nothing left to machine must not make a batch incomplete.
+await test('12e. skips a linked line with no material left when checking batch completeness', async () => {
+  // Inward material: 100 accepted, ready for machining.
+  const created = await saveInward({
+    organization_id: ORG, party_id: customerId, dc_date: '2026-11-25', finalize: true,
+    items: [{ part_number: 'KI-BAT', unit: 'NOS', declared_qty: 100, supply_source: 'customer_material' }],
+  })
+  const inward = created.document
+  const inwardItem = created.items[0].id
+  await receive({
+    organization_id: ORG, dc_id: inward.id,
+    lines: [{ dc_item_id: inwardItem, received_qty: 100, inspection_required: true }],
+  })
+  await inspect({
+    organization_id: ORG, dc_id: inward.id,
+    lines: [{ dc_item_id: inwardItem, accepted_qty: 100, pending_qty: 0 }],
+  })
+
+  // Two outward challans draw from the same inward line. Both are created
+  // before any machining, so the second can be raised while its material is
+  // still there on the inward line.
+  const firstOut = await saveCustomer({
+    organization_id: ORG, party_id: customerId, dc_date: '2026-11-26', finalize: true,
+    items: [{ part_number: 'KI-BAT', unit: 'NOS', declared_qty: 100, supply_source: 'customer_material', source_inward_item_id: inwardItem }],
+  })
+  const firstItem = firstOut.items[0].id
+
+  const secondOut = await saveCustomer({
+    organization_id: ORG, party_id: customerId, dc_date: '2026-11-27', finalize: true,
+    items: [{ part_number: 'KI-BAT', unit: 'NOS', declared_qty: 20, supply_source: 'customer_material', source_inward_item_id: inwardItem }],
+  })
+  // The first challan machines all 100, exhausting the inward line.
+  await machining({
+    organization_id: ORG, party_id: customerId,
+    source_dc_id: firstOut.document.id, source_dc_item_id: firstItem,
+    material_owner_id: customerId,
+    part_number: 'KI-BAT', operation: 'CNC Turning', operation_date: '2026-11-26',
+    input_quantity: 100, input_unit: 'NOS',
+    accepted_output_quantity: 100, output_unit: 'NOS',
+  })
+  assertEqual(num(await rpc('dc_inward_line_unmachined', ORG, inwardItem)), 0,
+    'the inward line is fully machined, so the second challan has nothing left')
+
+  // A batch on the second challan used to be refused as INCOMPLETE_BATCH
+  // because its linked line was counted as required even though nothing was
+  // left to machine. It must now be accepted.
+  const result = await machiningBatch({
+    organization_id: ORG, dc_id: secondOut.document.id,
+    lines: [],
+  })
+  assertEqual(result.total_lines, 1, 'one outward line on this challan')
+})
+
+// The anti-partial-batch guarantee remains: a line that still has material
+// left cannot be dropped from the batch.
+await test('12f. still refuses a batch that omits a line with material left to machine', async () => {
+  const created = await saveInward({
+    organization_id: ORG, party_id: customerId, dc_date: '2026-11-28', finalize: true,
+    items: [{ part_number: 'KI-BAT2', unit: 'NOS', declared_qty: 50, supply_source: 'customer_material' }],
+  })
+  const inward = created.document
+  const inwardItem = created.items[0].id
+  await receive({
+    organization_id: ORG, dc_id: inward.id,
+    lines: [{ dc_item_id: inwardItem, received_qty: 50, inspection_required: true }],
+  })
+  await inspect({
+    organization_id: ORG, dc_id: inward.id,
+    lines: [{ dc_item_id: inwardItem, accepted_qty: 50, pending_qty: 0 }],
+  })
+
+  // Two outward lines draw from the same inward line: 30 and 20 of 50.
+  const outward = await saveCustomer({
+    organization_id: ORG, party_id: customerId, dc_date: '2026-11-29', finalize: true,
+    items: [
+      { part_number: 'KI-BAT2', unit: 'NOS', declared_qty: 30, supply_source: 'customer_material', source_inward_item_id: inwardItem },
+      { part_number: 'KI-BAT2', unit: 'NOS', declared_qty: 20, supply_source: 'customer_material', source_inward_item_id: inwardItem },
+    ],
+  })
+  const [line1, line2] = outward.items
+
+  // Cover only line 1; line 2 still has 20 left and is omitted. This must be
+  // refused so no half-saved batch can land.
+  await assertRejects(
+    () => machiningBatch({
+      organization_id: ORG, dc_id: outward.document.id,
+      lines: [{
+        dc_item_id: line1.id, party_id: customerId, material_owner_id: customerId,
+        part_number: 'KI-BAT2', operation: 'CNC Turning', operation_date: '2026-11-29',
+        input_quantity: 30, input_unit: 'NOS', output_unit: 'NOS',
+        accepted_output_quantity: 30, remaining_quantity: 0,
+      }],
+    }),
+    'INCOMPLETE_BATCH',
+    'a line with material left cannot be silently dropped from the batch',
+  )
+
+  // Both lines submitted together succeeds.
+  const ok = await machiningBatch({
+    organization_id: ORG, dc_id: outward.document.id,
+    lines: [
+      { dc_item_id: line1.id, party_id: customerId, material_owner_id: customerId,
+        part_number: 'KI-BAT2', operation: 'CNC Turning', operation_date: '2026-11-29',
+        input_quantity: 30, input_unit: 'NOS', output_unit: 'NOS',
+        accepted_output_quantity: 30, remaining_quantity: 0 },
+      { dc_item_id: line2.id, party_id: customerId, material_owner_id: customerId,
+        part_number: 'KI-BAT2', operation: 'CNC Turning', operation_date: '2026-11-29',
+        input_quantity: 20, input_unit: 'NOS', output_unit: 'NOS',
+        accepted_output_quantity: 20, remaining_quantity: 0 },
+    ],
+  })
+  assertEqual(ok.required_lines, 2, 'both lines were required and are now covered')
+  assertEqual(ok.covered_lines, 2, 'both lines are covered')
+})
+
+// A line that already has a result but still has remaining material must be
+// recordable again - a continuation machining result - until the remaining
+// quantity reaches zero. This reproduces the gap where the batch RPC dropped
+// any line that already had a result, so the continuation was never saved and
+// the form showed "Nothing left to record" even though material was left.
+await test('12g. records a continuation on a line that still has remaining material', async () => {
+  const created = await saveInward({
+    organization_id: ORG, party_id: customerId, dc_date: '2026-11-30', finalize: true,
+    items: [{ part_number: 'KI-BAT3', unit: 'NOS', declared_qty: 100, supply_source: 'customer_material' }],
+  })
+  const inward = created.document
+  const inwardItem = created.items[0].id
+  await receive({
+    organization_id: ORG, dc_id: inward.id,
+    lines: [{ dc_item_id: inwardItem, received_qty: 100, inspection_required: true }],
+  })
+  await inspect({
+    organization_id: ORG, dc_id: inward.id,
+    lines: [{ dc_item_id: inwardItem, accepted_qty: 100, pending_qty: 0 }],
+  })
+
+  const outward = await saveCustomer({
+    organization_id: ORG, party_id: customerId, dc_date: '2026-12-01', finalize: true,
+    items: [{ part_number: 'KI-BAT3', unit: 'NOS', declared_qty: 100, supply_source: 'customer_material', source_inward_item_id: inwardItem }],
+  })
+  const item = outward.items[0].id
+
+  // First batch machines 80 of 100, leaving 20.
+  await machiningBatch({
+    organization_id: ORG, dc_id: outward.document.id,
+    lines: [{
+      dc_item_id: item, party_id: customerId, material_owner_id: customerId,
+      part_number: 'KI-BAT3', operation: 'CNC Turning', operation_date: '2026-12-01',
+      input_quantity: 100, input_unit: 'NOS', output_unit: 'NOS',
+      accepted_output_quantity: 80, remaining_quantity: 20,
+    }],
+  })
+  assertEqual(num(await rpc('dc_inward_line_unmachined', ORG, inwardItem)), 20,
+    'twenty pieces are still to be machined after the partial batch')
+
+  // A continuation may not machine more than what is left.
+  await assertRejects(
+    () => machiningBatch({
+      organization_id: ORG, dc_id: outward.document.id,
+      lines: [{
+        dc_item_id: item, party_id: customerId, material_owner_id: customerId,
+        part_number: 'KI-BAT3', operation: 'CNC Turning', operation_date: '2026-12-01',
+        input_quantity: 30, input_unit: 'NOS', output_unit: 'NOS',
+        accepted_output_quantity: 30, remaining_quantity: 0,
+      }],
+    }),
+    'LINE_ALREADY_COMPLETE',
+    'a continuation cannot machine more than what is left',
+  )
+
+  // The same line is recordable again: the continuation starts from what is left.
+  const second = await machiningBatch({
+    organization_id: ORG, dc_id: outward.document.id,
+    lines: [{
+      dc_item_id: item, party_id: customerId, material_owner_id: customerId,
+      part_number: 'KI-BAT3', operation: 'CNC Turning', operation_date: '2026-12-02',
+      input_quantity: 20, input_unit: 'NOS', output_unit: 'NOS',
+      accepted_output_quantity: 20, remaining_quantity: 0,
+    }],
+  })
+  assertEqual(num(await rpc('dc_inward_line_unmachined', ORG, inwardItem)), 0,
+    'the continuation completes the line')
+  assertEqual(second.covered_lines, 1, 'the line is covered')
+
+  // Two results now exist for the line: the partial one and the continuation.
+  const count = (await q(
+    `select count(*)::int as n from public.dc_machining_results
+     where organization_id = $1 and source_dc_item_id = $2`,
+    [ORG, item],
+  )).rows[0].n
+  assertEqual(count, 2, 'the partial batch and the continuation are both stored')
+})
+
+// ---------------------------------------------------------------------------
 // 14. Dispatch and concurrency
 // ---------------------------------------------------------------------------
 

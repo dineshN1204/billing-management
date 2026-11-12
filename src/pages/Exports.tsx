@@ -16,17 +16,28 @@ export function Exports() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const exportCustomers = async () => {
+  /** Always clears the loading state, even if the request rejects. */
+  const runExport = async (build: (org: NonNullable<typeof organization>) => Promise<void>) => {
     if (!organization) return
     setLoading(true)
     setError('')
+    try {
+      await build(organization)
+    } catch (cause) {
+      setError(friendlyError(cause))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const exportCustomers = () => runExport(async (org) => {
     const { data, error: queryError } = await db
       .from('customers')
       .select('*')
-      .eq('organization_id', organization.id)
+      .eq('organization_id', org.id)
       .is('deleted_at', null)
       .order('name')
-    if (queryError) { setError(friendlyError(queryError)); setLoading(false); return }
+    if (queryError) { setError(friendlyError(queryError)); return }
     const headers = ['Name', 'GSTIN', 'Phone', 'Email', 'City', 'State', 'Pincode', 'Address', 'Verification']
     const rows = (data as Customer[]).map((c) => [
       c.name,
@@ -40,20 +51,16 @@ export function Exports() {
       c.verification_status
     ])
     downloadCSV('customers.csv', headers, rows)
-    setLoading(false)
-  }
+  })
 
-  const exportProducts = async () => {
-    if (!organization) return
-    setLoading(true)
-    setError('')
+  const exportProducts = () => runExport(async (org) => {
     const { data, error: queryError } = await db
       .from('products')
       .select('*')
-      .eq('organization_id', organization.id)
+      .eq('organization_id', org.id)
       .is('deleted_at', null)
       .order('name')
-    if (queryError) { setError(friendlyError(queryError)); setLoading(false); return }
+    if (queryError) { setError(friendlyError(queryError)); return }
     const headers = ['Name', 'Code', 'HSN', 'Unit', 'Default Rate', 'GST %', 'Description']
     const rows = (data as Product[]).map((p) => [
       p.name,
@@ -65,21 +72,17 @@ export function Exports() {
       p.description || ''
     ])
     downloadCSV('products.csv', headers, rows)
-    setLoading(false)
-  }
+  })
 
-  const exportBills = async () => {
-    if (!organization) return
-    setLoading(true)
-    setError('')
+  const exportBills = () => runExport(async (org) => {
     const { data, error: queryError } = await db
       .from('bills')
       .select('*')
-      .eq('organization_id', organization.id)
+      .eq('organization_id', org.id)
       .is('deleted_at', null)
       .order('bill_date', { ascending: false })
       .limit(5000)
-    if (queryError) { setError(friendlyError(queryError)); setLoading(false); return }
+    if (queryError) { setError(friendlyError(queryError)); return }
     const headers = ['Bill No', 'Date', 'Customer', 'GSTIN', 'Tax Mode', 'Subtotal', 'Discount', 'Taxable', 'CGST', 'SGST', 'IGST', 'Cess', 'Total GST', 'Grand Total', 'Amount Received', 'Remaining', 'Payment Status', 'Payment Date', 'Payment Method', 'Source', 'Verification']
     const rows = (data as Bill[]).map((b) => [
       b.bill_number,
@@ -107,8 +110,7 @@ export function Exports() {
       b.verification_status
     ])
     downloadCSV('bills.csv', headers, rows)
-    setLoading(false)
-  }
+  })
 
   return (
     <>

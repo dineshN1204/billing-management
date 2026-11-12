@@ -145,12 +145,12 @@ export function DcLedger() {
               </div>
             ) : (
               <>
-                <input value={search} placeholder="Search customers..." onChange={e => setSearch(e.target.value)} />
+                <input value={search} aria-label="Search customers" placeholder="Search customers..." onChange={e => setSearch(e.target.value)} />
                 {(matches.length > 0 || search.trim()) && (
-                  <ul className="dc-picker-results">
-                    {matches.length === 0 && <li className="muted">No customer found.</li>}
+                  <ul className="dc-picker-results" role="listbox" aria-label="Search results">
+                    {matches.length === 0 && <li className="muted" role="presentation">No customer found.</li>}
                     {matches.map(m => (
-                      <li key={m.id}><button type="button" onClick={() => select(m.id)}>{m.name}</button></li>
+                      <li key={m.id}><button type="button" role="option" onClick={() => select(m.id)}>{m.name}</button></li>
                     ))}
                   </ul>
                 )}

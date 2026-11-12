@@ -19,7 +19,14 @@ import type { Bill, BillItem, BillPayload, BillPayloadItem, Customer, Product } 
 /** The shape of one entry in the RPC's DUPLICATE_BILL detail payload. */
 type DuplicateBill = { bill_id: string; bill_number: string }
 
-const itemSchema = z.object({ product_name: z.string().trim().min(1, 'Enter a product name'), quantity: z.coerce.number().positive().max(99999999), rate: z.coerce.number().min(0).max(999999999), discount: z.coerce.number().min(0), gst_rate: z.coerce.number().min(0).max(100), cess_rate: z.coerce.number().min(0).max(1000).optional(), cess_amount: z.coerce.number().min(0).optional() })
+/** Decimal places the database accepts, per field (see parse_numeric in the migrations). */
+const maxDecimalPlaces = (field: string, places: number, max = 99999999) =>
+  z.coerce.number().min(0, `${field} must be 0 or more`).max(max, `${field} is too large`)
+    .refine(value => Number.isInteger(value * 10 ** places), {
+      message: `${field} can have at most ${places} decimal place${places === 1 ? '' : 's'}`,
+    })
+
+const itemSchema = z.object({ product_name: z.string().trim().min(1, 'Enter a product name'), quantity: maxDecimalPlaces('quantity', 3, 99999999).positive('quantity must be more than 0'), rate: maxDecimalPlaces('rate', 4, 999999999), discount: maxDecimalPlaces('discount', 2), gst_rate: maxDecimalPlaces('GST rate', 2, 100), cess_rate: maxDecimalPlaces('cess rate', 2, 1000).optional(), cess_amount: maxDecimalPlaces('cess amount', 2).optional() })
 const itemEmpty = (): DraftItem => ({ product_name: '', unit: 'NOS', quantity: '1', rate: '0', discount: '0', gst_rate: '18', cess_rate: '0', cess_amount: '0' })
 
 /**

@@ -170,10 +170,10 @@ under test. Worth knowing before reading a failure from it as a real defect:
 **bring the branch up to date with `npm run migrate` first**, and expect cases
 written before a migration to assert the behaviour that migration changed.
 
-The branch is now current through `0054` (`0044`, `0050`, `0051`, `0052`,
-`0053`, `0054` all applied; ledger has 50 rows). The full suite (128 cases)
-passes 128/128 as of 2026-11-02. The 14 pre-existing failures were three
-independent problems, all now resolved:
+The branch is now current through `0059` (`0044`, `0050`–`0059` all applied;
+ledger has 50 rows). The full suite (131 cases) passes 131/131 as of
+2026-11-12. The 14 pre-existing failures were three independent problems, all
+now resolved:
 
 - **16i/k/l/m — stale `dc_available_balance` body** (a genuine schema bug, not a
   test artifact). The branch carried the pre-0027 body, so the customer-material
@@ -899,6 +899,12 @@ An unguarded `language sql` version would still be recreated by applying `0032`
 cannot be applied to the production branch before `0054` — see the migration
 ordering note in `docs/DATABASE_MAINTENANCE.md`.
 
+**Closed 2026-11-12 by `0059_report_membership_guard_remaining.sql`.** Four report
+functions still lacked the guard after `0054` — `dc_pending_inspection`,
+`dc_acceptance_rate`, `dc_rejection_trend`, `dc_linked_bills` — and `0059` drops
+and recreates each with the identical `is_org_member` guard `0054` proved. With
+`0059`, all ten of the report functions `0034` set out to guard are guarded.
+
 ---
 
 ## 27. The bill number is the challan's serial, and four things are still open (added 2026-10-21)
@@ -1201,6 +1207,29 @@ migration is applied.
 
 ---
 
+## 34. Batch machining results were rejected for lines with no material left to machine (fixed 2026-11-11, migrations 0055, 0056, 0058)
+
+The machining form (DcDetail.tsx) marks a job-work line "Not required" when its
+inward source has no material left to machine (its `dc_inward_line_unmachined`
+is 0) — the case where two outward lines draw from one inward line and the
+first has already accounted for all the material. Migration 0043's completeness
+gate in `record_machining_batch` did not know about that rule: it required a
+result for every inward-linked line with accepted quantity > 0, so it rejected
+the batch with `INCOMPLETE_BATCH` ("machining results are missing for 1
+job-work line(s)") even when every line the form showed had been filled.
+
+**Fixed by migrations 0055, 0056, 0058**, which together align the gate with the
+form: 0055 requires a result only while its inward source still has material left
+to machine (`app_private.dc_inward_line_unmachined(...) > 0`); 0056 restores
+continuation batches (a line already accounted for in an earlier batch is skipped,
+not rejected); 0058 adds the single-line `record_machining_result` coverage guard.
+The anti-partial-batch guarantee is unchanged for every line that actually has
+work to account for.
+
+**Verification:** the database test suite was run against the Neon test branch
+(131/131 pass, 2026-11-12) and `scripts/validate-migrations.mjs` checks all of
+0055–0058 plus 0059 cleanly.
+
 ## Manual browser checklist
 
 These need a real browser and, in places, a real device. They are the things
@@ -1337,11 +1366,3 @@ most likely to be wrong and least likely to be caught by the existing tests.
 - [ ] Partial payment, advance, and full settlement.
 - [ ] Overdue detection against the due date.
 - [ ] Customer statement totalling correctly over a period.
- - - - 
- 
- # #   B a t c h   m a c h i n i n g   r e s u l t s   f o r   m u l t i - l i n e   o u t w a r d   D C s   ( f i x e d   2 0 2 6 - 1 0 - 2 4 ,   m i g r a t i o n   0 0 4 3 ) 
- 
- P r e v i o u s l y   t h e   o p e r a t o r   c o u l d   r e c o r d   a   m a c h i n i n g   r e s u l t   f o r   l i n e   1   o f   a   2 - l i n e   o u t w a r d   c u s t o m e r   D C   a n d   f o r g e t   l i n e   2 ;   t h e   d a t a b a s e   a c c e p t e d   t h e   p a r t i a l   b a t c h   a n d   t h e   P D F   d i d   n o t   s h o w   w h i c h   l i n e   a   r e s u l t   b e l o n g e d   t o . 
- 
- F i x e d :   ` r e c o r d _ m a c h i n i n g _ b a t c h `   w r i t e s   a l l   r e q u i r e d   j o b - w o r k   l i n e s   a t o m i c a l l y ;   i t   r e f u s e s   t h e   b a t c h   i f   a n y   r e q u i r e d   l i n e   l a c k s   a   r e s u l t .   T h e   e x i s t i n g   ` r e c o r d _ m a c h i n i n g _ r e s u l t `   i s   p r e s e r v e d   f o r   s i n g l e - l i n e   D C s .   T h e   p a n e l   s h o w s   e a c h   r e q u i r e d   l i n e   w i t h   i t s   s t a t u s   ( R e c o r d e d   /   P e n d i n g   /   N o t   a p p l i c a b l e )   a n d   t h e   l i n e   n u m b e r   a p p e a r s   i n   t h e   m a c h i n i n g   r e s u l t s   t a b l e ,   P D F   a n d   d a t a b a s e   a u d i t   t r a i l .   U n l i n k e d   f i n i s h e d - s t o c k   l i n e s   a r e   m a r k e d   N o t   a p p l i c a b l e   a n d   d o   n o t   b l o c k   s u b m i s s i o n .  
- 

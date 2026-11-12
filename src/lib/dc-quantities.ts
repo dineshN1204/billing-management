@@ -11,6 +11,8 @@
  * pools of material are never netted against one another.
  */
 
+import type { DcMachiningResult } from './dc-types'
+
 export type ReceiptSplit = {
   declared: number
   received: number
@@ -639,4 +641,115 @@ export function machiningBalance(input: number, outcome: MachiningOutcome): Mach
     reconciled: Math.abs(remaining) < 0.0005,
     over: remaining < -0.0005,
   }
+}
+
+/**
+ * One merged row for a line that has had machining recorded against it, possibly
+ * over several batches (continuations).
+ *
+ * A continuation is a later result on the same outward line whose input is the
+ * previous result's remaining. Displaying every result as its own row shows the
+ * same part twice and leaves the first row's remaining looking current when it
+ * was consumed by the continuation. Merging gives the line a single, tallying
+ * row: every unit of material ends up finished, rejected, reworked, scrapped,
+ * lost or still remaining, so the sum of those is the line's total quantity.
+ */
+export type MachiningMergeRow = {
+  /** The outward line this row belongs to (null when the result is unlinked). */
+  sourceDcItemId: string | null
+  lineNo: number | null
+  partNumber: string
+  operation: string
+  /** Total material across every batch on this line. */
+  quantity: number
+  inputUnit: string
+  finished: number
+  outputUnit: string
+  rejection: number
+  rework: number
+  scrap: number
+  loss: number
+  /** Material still unmachined after the most recent batch. */
+  remaining: number
+}
+
+export function mergeMachiningRows(
+  results: DcMachiningResult[],
+  lineNoOf?: (itemId: string | null) => number | null | undefined,
+): MachiningMergeRow[] {
+  const rows: MachiningMergeRow[] = []
+  const seen = new Set<string>()
+  for (const r of results) {
+    // Group by the outward line. Results with no line link cannot be told apart
+    // and are shown as their own row, matching the historical per-result table.
+    const key = r.source_dc_item_id ?? r.id
+    if (seen.has(key)) continue
+    seen.add(key)
+
+    const group = results.filter(g => (g.source_dc_item_id ?? g.id) === key)
+    // Records are only merged when every batch on the line is commensurate: no
+    // unit conversion (input and output units differ) and the same units across
+    // batches. A conversion is a distinct operation whose input and output
+    // cannot be added, so it keeps its own row, as the historical table did.
+    const firstOfGroup = group[0]!
+    const commensurate = group.every(g =>
+      g.input_unit === g.output_unit && g.input_unit === firstOfGroup.input_unit,
+    )
+    if (!commensurate) {
+      for (const g of group) {
+        rows.push({
+          sourceDcItemId: g.source_dc_item_id,
+          lineNo: g.source_dc_item_id != null ? (lineNoOf?.(g.source_dc_item_id) ?? null) : null,
+          partNumber: g.part_number,
+          operation: g.operation,
+          quantity: toQty(g.input_quantity || 0),
+          inputUnit: g.input_unit,
+          finished: toQty(g.accepted_output_quantity || 0),
+          outputUnit: g.output_unit,
+          rejection: toQty(g.machining_rejection_quantity || 0),
+          rework: toQty(g.rework_quantity || 0),
+          scrap: toQty(g.scrap_quantity || 0),
+          loss: toQty(g.process_loss_quantity || 0),
+          remaining: toQty(g.remaining_quantity || 0),
+        })
+      }
+      continue
+    }
+
+    // The group always contains at least the result that opened this key.
+    // The most recent batch on this line decides what is still left.
+    const sorted = [...group].sort((a, b) =>
+      (a.operation_date ?? '').localeCompare(b.operation_date ?? '') || a.id.localeCompare(b.id),
+    )
+    const latest = sorted[sorted.length - 1]!
+    const first = sorted[0]!
+
+    const finished = group.reduce((s, g) => s + (g.accepted_output_quantity || 0), 0)
+    const rejection = group.reduce((s, g) => s + (g.machining_rejection_quantity || 0), 0)
+    const rework = group.reduce((s, g) => s + (g.rework_quantity || 0), 0)
+    const scrap = group.reduce((s, g) => s + (g.scrap_quantity || 0), 0)
+    const loss = group.reduce((s, g) => s + (g.process_loss_quantity || 0), 0)
+    const remaining = latest.remaining_quantity || 0
+    // With matching units every unit of input ends up finished, rejected,
+    // reworked, scrapped, lost or still remaining, so that sum is the line's
+    // total material across all its batches.
+    const quantity = finished + rejection + rework + scrap + loss + remaining
+
+    rows.push({
+      sourceDcItemId: r.source_dc_item_id,
+      lineNo: r.source_dc_item_id != null ? (lineNoOf?.(r.source_dc_item_id) ?? null) : null,
+      partNumber: first.part_number,
+      operation: first.operation,
+      quantity: toQty(quantity),
+      inputUnit: first.input_unit,
+      finished: toQty(finished),
+      outputUnit: first.output_unit,
+      rejection: toQty(rejection),
+      rework: toQty(rework),
+      scrap: toQty(scrap),
+      loss: toQty(loss),
+      remaining: toQty(remaining),
+    })
+  }
+  return rows
 }

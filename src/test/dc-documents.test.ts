@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { friendlyError } from '../lib/format'
 import { DC_TYPE_LABEL, DC_TYPE_TITLE, INSPECTION_STATUS_LABEL, draftFromItem, emptyItem } from '../lib/dc-types'
 import { buildDcDefinition, downloadDcPdf } from '../lib/dc-pdf'
+import { mergeMachiningRows } from '../lib/dc-quantities'
 import type { DcBundle, DcDocument, DcItem, DcMachiningResult } from '../lib/dc-types'
 
 /**
@@ -324,5 +324,49 @@ describe('Delivery Challan error messages', () => {
     expect(friendlyError(new Error('PT409: MACHINING_NOT_RECONCILED'))).toMatch(/reconcile/i)
     expect(friendlyError(new Error('PT409: DOCUMENT_CANCELLED'))).toMatch(/cancelled/i)
     expect(friendlyError(new Error('PT403: FORBIDDEN: only administrators can cancel'))).toMatch(/permission/i)
+  })
+})
+
+describe('Machining result merging across continuation batches', () => {
+  it('merges a continuation into one row per line and tallies the remaining', () => {
+    // The exact case the outward DC shows: DF-452 is machined in two batches.
+    // The first leaves 40 remaining; the second (continuation) machines that 40
+    // to zero. The merged row must show one DF-452 with a 440 total, 440
+    // finished and 0 remaining - not two rows with a stale "remaining 40".
+    const rows = mergeMachiningRows([
+      machiningResult({
+        id: 'm-1', source_dc_item_id: 'i-1', operation_date: '2026-10-05',
+        part_number: 'DF-452', input_quantity: 440, accepted_output_quantity: 400,
+        machining_rejection_quantity: 0, rework_quantity: 0, scrap_quantity: 0,
+        process_loss_quantity: 0, remaining_quantity: 40,
+      }),
+      machiningResult({
+        id: 'm-2', source_dc_item_id: 'i-1', operation_date: '2026-10-06',
+        part_number: 'DF-452', input_quantity: 40, accepted_output_quantity: 40,
+        machining_rejection_quantity: 0, rework_quantity: 0, scrap_quantity: 0,
+        process_loss_quantity: 0, remaining_quantity: 0,
+      }),
+    ], id => (id === 'i-1' ? 1 : null))
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.partNumber).toBe('DF-452')
+    expect(rows[0]!.lineNo).toBe(1)
+    expect(rows[0]!.quantity).toBe(440)
+    expect(rows[0]!.finished).toBe(440)
+    expect(rows[0]!.remaining).toBe(0)
+  })
+
+  it('keeps a unit-conversion record as its own row, not merged', () => {
+    const rows = mergeMachiningRows([
+      machiningResult({
+        id: 'm-1', source_dc_item_id: 'i-1', input_quantity: 250, input_unit: 'KG',
+        accepted_output_quantity: 180, output_unit: 'NOS', remaining_quantity: 0,
+      }),
+    ])
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.quantity).toBe(250)
+    expect(rows[0]!.inputUnit).toBe('KG')
+    expect(rows[0]!.finished).toBe(180)
+    expect(rows[0]!.outputUnit).toBe('NOS')
   })
 })
