@@ -32,7 +32,7 @@
     "@neon/functions": "^0.11.0",
     "@neondatabase/neon-js": "^0.7.0-beta",
     "decimal.js": "^10.6.0",
-    "hono": "^4.13.13",
+    "hono": "^4.13.16",
     "jose": "^6.2.12",
     "lucide-react": "^0.468.0",
     "pdfmake": "^0.3.11",
